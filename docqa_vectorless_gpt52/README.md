@@ -28,6 +28,10 @@ pip install -e .
 ```bash
 docqa ingest path/to/report.pdf
 ```
+To limit processing to the first N pages:
+```bash
+docqa ingest path/to/report.pdf --max-pages 5
+```
 
 ### Ask
 ```bash

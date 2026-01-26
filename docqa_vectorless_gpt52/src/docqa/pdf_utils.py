@@ -28,11 +28,13 @@ def ensure_pdf(input_path: Path, output_dir: Path) -> Path:
     raise ValueError(f"Unsupported input format or missing converter: {input_path}")
 
 
-def split_pdf(pdf_path: Path, output_dir: Path) -> list[Path]:
+def split_pdf(pdf_path: Path, output_dir: Path, max_pages: int | None = None) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     reader = PdfReader(str(pdf_path))
     page_paths: list[Path] = []
     for idx, page in enumerate(reader.pages, start=1):
+        if max_pages is not None and idx > max_pages:
+            break
         writer = PdfWriter()
         writer.add_page(page)
         out_path = output_dir / f"page_{idx:04d}.pdf"

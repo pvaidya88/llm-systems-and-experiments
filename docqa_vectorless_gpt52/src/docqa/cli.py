@@ -16,12 +16,12 @@ app = typer.Typer(help="Vectorless document QA with GPT-5.2")
 
 
 @app.command()
-def ingest(path: str, force: bool = False) -> None:
+def ingest(path: str, force: bool = False, max_pages: int | None = None) -> None:
     """Ingest a document (PDF required; DOCX/PPTX optional if conversion available)."""
     cfg = load_config()
     ensure_dirs(cfg)
     client = OpenAIClient(cfg)
-    doc_id = ingest_document(path=Path(path), cfg=cfg, client=client, force=force)
+    doc_id = ingest_document(path=Path(path), cfg=cfg, client=client, force=force, max_pages=max_pages)
     typer.echo(doc_id)
 
 

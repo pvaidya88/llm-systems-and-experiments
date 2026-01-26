@@ -33,6 +33,7 @@ def ingest_document(
     cfg: Config,
     client: OpenAIClient,
     force: bool = False,
+    max_pages: int | None = None,
 ) -> str:
     ensure_dirs(cfg)
     conn = get_conn(cfg.db_path)
@@ -63,7 +64,8 @@ def ingest_document(
         clear_fts_for_doc(conn, doc_id)
         conn.commit()
 
-    num_pages = pdf_page_count(pdf_path)
+    total_pages = pdf_page_count(pdf_path)
+    num_pages = min(total_pages, max_pages) if max_pages else total_pages
     upsert_document(
         conn,
         doc_id=doc_id,
@@ -76,7 +78,7 @@ def ingest_document(
     )
 
     page_dir = cfg.data_dir / "pages" / doc_id
-    page_paths = split_pdf(pdf_path, page_dir)
+    page_paths = split_pdf(pdf_path, page_dir, max_pages=max_pages)
 
     for page_number, page_path in enumerate(page_paths, start=1):
         file_id = client.upload_file(page_path)

@@ -20,6 +20,7 @@ app = FastAPI(title="docqa-vectorless-gpt52")
 class IngestRequest(BaseModel):
     path: str
     force: bool = False
+    max_pages: int | None = None
 
 
 class AskRequest(BaseModel):
@@ -48,7 +49,13 @@ def ingest(req: IngestRequest) -> dict[str, str]:
     cfg = app.state.cfg
     client = app.state.client
     try:
-        doc_id = ingest_document(path=Path(req.path), cfg=cfg, client=client, force=req.force)
+        doc_id = ingest_document(
+            path=Path(req.path),
+            cfg=cfg,
+            client=client,
+            force=req.force,
+            max_pages=req.max_pages,
+        )
         return {"doc_id": doc_id, "status": "READY"}
     except Exception as exc:  # noqa: BLE001
         logger.exception("Ingest failed")
