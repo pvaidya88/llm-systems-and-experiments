@@ -17,6 +17,7 @@ class RLMOptions:
     max_output_chars: int = 4000
     max_sub_calls: int = 32
     include_cost_hint: bool = True
+    require_repl: bool = False
 
 
 class RLM:
@@ -62,23 +63,39 @@ class RLM:
             {"role": "user", "content": query},
         ]
 
+        saw_repl = False
         for _ in range(self._options.max_steps):
             assistant = self._root_llm.complete(messages)
             messages.append({"role": "assistant", "content": assistant})
 
+            repl_blocks = _extract_repl_blocks(assistant)
+            if repl_blocks:
+                saw_repl = True
+
+                outputs = []
+                for block in repl_blocks:
+                    outputs.append(repl.exec(block))
+
+                messages.append({"role": "user", "content": _format_repl_outputs(outputs)})
+
             final = _extract_final(assistant)
             if final is not None:
+                if self._options.require_repl and not saw_repl:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "You must use the REPL before answering. "
+                                "Run at least one ```repl``` block to inspect context, "
+                                "then respond with FINAL(...)."
+                            ),
+                        }
+                    )
+                    continue
                 return _resolve_final(final, repl)
 
-            repl_blocks = _extract_repl_blocks(assistant)
             if not repl_blocks:
                 raise RuntimeError("No repl block or FINAL found in assistant output")
-
-            outputs = []
-            for block in repl_blocks:
-                outputs.append(repl.exec(block))
-
-            messages.append({"role": "user", "content": _format_repl_outputs(outputs)})
 
         raise RuntimeError("Max steps reached without FINAL")
 

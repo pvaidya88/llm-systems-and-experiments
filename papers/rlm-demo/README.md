@@ -48,6 +48,7 @@ python -m examples.rlm_vs_rag_demo
 ## Root vs sub-LM strength demo
 
 This example runs two experiments: a weak root+sub pair and a strong pair using actual OpenAI models.
+It enforces REPL usage and a strict output format, and will retry invalid outputs.
 Defaults: weak = gpt-4.1-nano, strong = gpt-5.2. Override with env vars below.
 
 ```powershell
@@ -64,6 +65,8 @@ $env:STRONG_ROOT_MODEL = "gpt-5.2"
 $env:STRONG_SUB_MODEL = "gpt-5.2"
 $env:ROOT_MODEL_EFFORT = "xhigh"
 $env:SUB_MODEL_EFFORT = "medium"
+$env:OPENAI_TEXT_VERBOSITY = "low"
+$env:MAX_ATTEMPTS = "2"
 ```
 
 Note: `reasoning.effort` is only applied to reasoning-capable models (gpt-5 / o-series).

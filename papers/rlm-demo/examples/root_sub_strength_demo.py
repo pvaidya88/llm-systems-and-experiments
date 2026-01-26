@@ -1,6 +1,11 @@
+import csv
 import os
+import re
+from datetime import date
 
-from rlm_demo import LLMClient, OpenAIResponsesClient, RLM
+from rlm_demo import LLMClient, OpenAIResponsesClient, RLM, RLMOptions
+
+OUTPUT_PATTERN = re.compile(r"^eligible=(true|false), payout=(\d+)$", re.IGNORECASE)
 
 
 class ScriptedLLM(LLMClient):
@@ -21,25 +26,6 @@ class StaticLLM(LLMClient):
         return self._reply
 
 
-def expected_answer(note, plan, amount):
-    if "out of network" in note.lower():
-        eligible = False
-    else:
-        eligible = "emergency towing" in note.lower()
-    payout = 0
-    if eligible:
-        rate = 0.8 if plan == "Gold" else 0.5
-        payout = int(float(amount) * rate)
-    return f"eligible={eligible}, payout={payout}"
-
-
-def run_case(label, root_replies, sub_reply, query, context):
-    rlm = RLM(root_llm=ScriptedLLM(root_replies), sub_llm=StaticLLM(sub_reply))
-    answer = rlm.answer(query, context)
-    print(f"{label} answer: {answer}")
-    return answer
-
-
 def supports_reasoning_model(model_name):
     if not model_name:
         return False
@@ -47,12 +33,107 @@ def supports_reasoning_model(model_name):
     return name.startswith("gpt-5") or name.startswith("o")
 
 
+def normalize_answer(text):
+    if text is None:
+        return None
+    cleaned = text.strip()
+    match = OUTPUT_PATTERN.fullmatch(cleaned)
+    if not match:
+        return None
+    return f"eligible={match.group(1).lower()}, payout={int(match.group(2))}"
+
+
+def build_query(base_query, attempt, last_error):
+    if attempt == 0:
+        return base_query
+    return (
+        base_query
+        + "\n\nYour previous answer was invalid. "
+        + (f"Error: {last_error}. " if last_error else "")
+        + "Return EXACTLY: eligible=<true|false>, payout=<int>. No extra text."
+    )
+
+
+def parse_note_flags(note):
+    note_lower = note.lower()
+    emergency = any(
+        term in note_lower
+        for term in (
+            "emergency towing",
+            "towed",
+            "tow truck",
+            "towing",
+            "vehicle immobile",
+            "immobile",
+            "stalled on highway",
+        )
+    )
+    preauth = bool(re.search(r"\bpa-\d+\b", note_lower)) or "preauth" in note_lower
+    out_of_network = (
+        "out of network" in note_lower
+        or "out-of-network" in note_lower
+        or "oon" in note_lower
+    )
+    immobile = "immobile" in note_lower or "cannot move" in note_lower
+    return emergency, preauth, out_of_network, immobile
+
+
+def compute_expected(row):
+    plan = row["plan"]
+    amount = int(row["amount"])
+    service_date = date.fromisoformat(row["service_date"])
+    filed_date = date.fromisoformat(row["filed_date"])
+    note = row["note"]
+
+    emergency, preauth, out_of_network, immobile = parse_note_flags(note)
+    timely = (filed_date - service_date).days <= 30
+
+    if out_of_network or not timely:
+        eligible = False
+    elif plan == "Gold":
+        eligible = True
+    elif plan == "Silver":
+        eligible = emergency and preauth
+    elif plan == "Bronze":
+        eligible = emergency and immobile and amount <= 1200
+    else:
+        eligible = False
+
+    payout = 0
+    if eligible:
+        deductibles = {"Gold": 100, "Silver": 200, "Bronze": 300}
+        caps = {"Gold": 3000, "Silver": 1500, "Bronze": 800}
+        payout = min(max(amount - deductibles.get(plan, 0), 0), caps.get(plan, amount))
+
+    return f"eligible={str(eligible).lower()}, payout={payout}"
+
+
+def parse_csv_rows(csv_text):
+    rows = []
+    reader = csv.DictReader([line for line in csv_text.splitlines() if line.strip()])
+    for row in reader:
+        rows.append({key.strip(): value.strip() for key, value in row.items()})
+    return rows
+
+
+def run_case(label, root_replies, sub_reply, query, context):
+    rlm = RLM(
+        root_llm=ScriptedLLM(root_replies),
+        sub_llm=StaticLLM(sub_reply),
+        options=RLMOptions(require_repl=True, max_steps=10),
+    )
+    answer = rlm.answer(query, context)
+    normalized = normalize_answer(answer) or answer
+    print(f"{label} answer: {normalized}")
+    return normalized
+
+
 def run_live_case(label, root_model, sub_model, query, context):
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("Set OPENAI_API_KEY to run live model experiments.")
     base_url = os.environ.get("OPENAI_BASE_URL")
-    text_verbosity = os.environ.get("OPENAI_TEXT_VERBOSITY", "medium")
+    text_verbosity = os.environ.get("OPENAI_TEXT_VERBOSITY", "low")
 
     def normalize_effort(value):
         value = (value or "").strip()
@@ -75,104 +156,160 @@ def run_live_case(label, root_model, sub_model, query, context):
         reasoning_effort=sub_effort if supports_reasoning_model(sub_model) else None,
         text_verbosity=text_verbosity,
     )
-    rlm = RLM(root_llm=root_client, sub_llm=sub_client)
-    try:
-        answer = rlm.answer(query, context)
-    except Exception as exc:
-        print(f"{label} ({root_model} / {sub_model}) error: {exc}")
-        return f"<error: {exc}>"
-    print(f"{label} ({root_model} / {sub_model}) answer: {answer}")
-    return answer
+    rlm = RLM(
+        root_llm=root_client,
+        sub_llm=sub_client,
+        options=RLMOptions(require_repl=True, max_steps=10),
+    )
+
+    max_attempts = int(os.environ.get("MAX_ATTEMPTS", "2"))
+    last_error = None
+    last_answer = None
+    for attempt in range(max_attempts):
+        attempt_query = build_query(query, attempt, last_error)
+        try:
+            answer = rlm.answer(attempt_query, context)
+        except Exception as exc:
+            print(f"{label} ({root_model} / {sub_model}) error: {exc}")
+            return f"<error: {exc}>"
+        last_answer = answer
+        normalized = normalize_answer(answer)
+        if normalized:
+            print(f"{label} ({root_model} / {sub_model}) answer: {normalized}")
+            return normalized
+        last_error = f"invalid format: {answer}"
+
+    print(f"{label} ({root_model} / {sub_model}) invalid output: {last_answer}")
+    return f"<invalid: {last_answer}>"
 
 
 def main():
     policy = """\
 Rules:
-1) Eligible if plan == Gold OR (plan == Silver and note implies emergency towing).
-2) If note indicates out-of-network, ineligible.
-Payout: Gold = 0.8 * amount, Silver = 0.5 * amount.
+1) Ineligible if note indicates out-of-network ("out of network" or "OON").
+2) Claim must be filed within 30 days of service_date.
+3) Eligibility by plan:
+   - Gold: eligible if rules 1-2 pass.
+   - Silver: eligible only if note implies emergency towing AND a pre-authorization code is present.
+   - Bronze: eligible only if note implies emergency towing, the vehicle was immobile, AND amount <= 1200.
+4) Payout = min(max(amount - deductible, 0), cap).
+   - Deductible: Gold 100, Silver 200, Bronze 300.
+   - Cap: Gold 3000, Silver 1500, Bronze 800.
 """
+
     claims_csv = """\
-id,plan,amount,note
-C100,Silver,1000,includes emergency towing; in-network
-C101,Gold,2000,in-network
-C102,Silver,1500,out of network; emergency towing
+id,plan,amount,service_date,filed_date,note
+C100,Silver,1800,2024-08-01,2024-08-20,Towed from highway after engine failure; preauth code PA-8842; in network
+C101,Gold,500,2024-06-10,2024-07-25,in-network
+C102,Bronze,1000,2024-08-03,2024-08-05,Vehicle immobile; tow truck dispatched; in-network
+C103,Silver,900,2024-08-02,2024-08-10,Roadside assistance only; no tow; OON
 """
+
     context = [policy, claims_csv]
     query = (
-        "Use the REPL to parse the CSV and policy. If needed, call llm_query to "
-        "interpret the note. For claim C100, is it eligible and what is the payout?"
+        "Use the REPL to parse the policy and CSV. "
+        "If needed, call llm_query to classify the note (emergency towing? preauth code present?). "
+        "Return EXACTLY: eligible=<true|false>, payout=<int>. No extra text. "
+        "Question: For claim C100, is it eligible and what is the payout?"
     )
 
-    weak_root = [
-        """```repl
-policy, claims_csv = context
-lines = [line.strip() for line in claims_csv.splitlines() if line.strip()]
-header = [h.strip() for h in lines[0].split(",")]
-rows = []
-for line in lines[1:]:
-    parts = [p.strip() for p in line.split(",")]
-    rows.append(dict(zip(header, parts)))
-row = [r for r in rows if r["id"] == "C100"][0]
-note = row["note"]
-if "out of network" in note.lower():
-    eligible = False
-else:
-    ans = llm_query(
-        f"Answer yes or no: does this note imply emergency towing? Note: {note}"
-    )
-    eligible = ans.strip().lower() == "yes"
-payout = 0
-if eligible:
-    rate = 0.8 if row["plan"] == "Gold" else 0.5
-    payout = int(float(row["amount"]) * rate)
-answer = f"eligible={eligible}, payout={payout}"
-print(answer)
-```""",
-        "FINAL_VAR(answer)",
-    ]
-
-    strong_root = [
-        """```repl
-policy, claims_csv = context
-lines = [line.strip() for line in claims_csv.splitlines() if line.strip()]
-header = [h.strip() for h in lines[0].split(",")]
-rows = []
-for line in lines[1:]:
-    parts = [p.strip() for p in line.split(",")]
-    rows.append(dict(zip(header, parts)))
-row = [r for r in rows if r["id"] == "C100"][0]
-note = row["note"]
-if "out of network" in note.lower():
-    eligible = False
-else:
-    ans = llm_query(
-        f"Answer yes or no: does this note imply emergency towing? Note: {note}"
-    )
-    ans_norm = ans.strip().lower()
-    eligible = ans_norm.startswith("y") or "yes" in ans_norm
-payout = 0
-if eligible:
-    rate = 0.8 if row["plan"] == "Gold" else 0.5
-    payout = int(float(row["amount"]) * rate)
-answer = f"eligible={eligible}, payout={payout}"
-print(answer)
-```""",
-        "FINAL_VAR(answer)",
-    ]
-
-    weak_sub = "Yes, it includes emergency towing."
-    strong_sub = "yes"
-
-    expected = expected_answer(
-        note="includes emergency towing; in-network",
-        plan="Silver",
-        amount="1000",
-    )
+    rows = parse_csv_rows(claims_csv)
+    target = next(row for row in rows if row["id"] == "C100")
+    expected = compute_expected(target)
     print("Expected:", expected)
 
     use_scripted = os.environ.get("USE_SCRIPTED_DEMO") == "1"
     if use_scripted:
+        weak_root = [
+            """```repl
+import csv
+from datetime import date
+
+policy, claims_csv = context
+reader = csv.DictReader([line for line in claims_csv.splitlines() if line.strip()])
+rows = list(reader)
+row = [r for r in rows if r["id"] == "C100"][0]
+amount = int(row["amount"])
+service_date = date.fromisoformat(row["service_date"])
+filed_date = date.fromisoformat(row["filed_date"])
+note = row["note"]
+
+if "out of network" in note.lower() or "oon" in note.lower():
+    eligible = False
+elif (filed_date - service_date).days > 30:
+    eligible = False
+else:
+    if row["plan"] == "Gold":
+        eligible = True
+    elif row["plan"] == "Silver":
+        ans = llm_query(
+            f"Answer yes or no: does the note imply emergency towing? Note: {note}"
+        )
+        emergency = ans.strip().lower() == "yes"
+        preauth = "pa-" in note.lower() or "preauth" in note.lower()
+        eligible = emergency and preauth
+    else:
+        eligible = False
+
+payout = 0
+if eligible:
+    deductible = 200
+    cap = 1500
+    payout = min(max(amount - deductible, 0), cap)
+answer = f"eligible={str(eligible).lower()}, payout={payout}"
+print(answer)
+```""",
+            "FINAL_VAR(answer)",
+        ]
+
+        strong_root = [
+            """```repl
+import csv
+from datetime import date
+
+policy, claims_csv = context
+reader = csv.DictReader([line for line in claims_csv.splitlines() if line.strip()])
+rows = list(reader)
+row = [r for r in rows if r["id"] == "C100"][0]
+amount = int(row["amount"])
+service_date = date.fromisoformat(row["service_date"])
+filed_date = date.fromisoformat(row["filed_date"])
+note = row["note"]
+
+note_lower = note.lower()
+if "out of network" in note_lower or "oon" in note_lower:
+    eligible = False
+elif (filed_date - service_date).days > 30:
+    eligible = False
+else:
+    if row["plan"] == "Gold":
+        eligible = True
+    elif row["plan"] == "Silver":
+        ans = llm_query(
+            "Answer yes or no only: does the note imply emergency towing? "
+            f"Note: {note}"
+        )
+        ans_norm = ans.strip().lower()
+        emergency = ans_norm.startswith("y") or "yes" in ans_norm
+        preauth = "pa-" in note_lower or "preauth" in note_lower
+        eligible = emergency and preauth
+    else:
+        eligible = False
+
+payout = 0
+if eligible:
+    deductible = 200
+    cap = 1500
+    payout = min(max(amount - deductible, 0), cap)
+answer = f"eligible={str(eligible).lower()}, payout={payout}"
+print(answer)
+```""",
+            "FINAL_VAR(answer)",
+        ]
+
+        weak_sub = "Yes, it indicates emergency towing."
+        strong_sub = "yes"
+
         weak_answer = run_case(
             "Weak root + weak sub", weak_root, weak_sub, query, context
         )
