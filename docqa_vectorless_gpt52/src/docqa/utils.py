@@ -21,6 +21,15 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def make_prompt_cache_key(prefix: str, *parts: str, max_len: int = 64) -> str:
+    base = ":".join([prefix, *parts])
+    if len(base) <= max_len:
+        return base
+    digest = hashlib.sha256(base.encode("utf-8")).hexdigest()
+    trimmed_prefix = prefix[: max(1, max_len - 1 - len(digest[:12]))]
+    return f"{trimmed_prefix}:{digest[:12]}"
+
+
 def slugify(text: str) -> str:
     text = text.lower().strip()
     text = re.sub(r"[^a-z0-9]+", "-", text)

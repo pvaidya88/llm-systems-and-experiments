@@ -11,7 +11,7 @@ from .db import get_document, get_figure_json, get_object, get_objects_metadata,
 from .openai_client import OpenAIClient
 from .retrieval import build_query, search_candidates
 from .schemas import FINAL_ANSWER_SCHEMA, QUERY_EXPANSION_SCHEMA, RERANK_SCHEMA
-from .utils import parse_number, string_similarity
+from .utils import make_prompt_cache_key, parse_number, string_similarity
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def ask(
         ],
         schema=QUERY_EXPANSION_SCHEMA,
         schema_name="query_expansion",
-        prompt_cache_key=f"{cfg.prompt_cache_prefix}:{doc_id}:{cfg.extraction_version}:query",
+        prompt_cache_key=make_prompt_cache_key(cfg.prompt_cache_prefix, doc_id, cfg.extraction_version, "query"),
         max_output_tokens=cfg.max_output_tokens_query,
     )
 
@@ -101,7 +101,7 @@ def ask(
         ],
         schema=RERANK_SCHEMA,
         schema_name="rerank",
-        prompt_cache_key=f"{cfg.prompt_cache_prefix}:{doc_id}:{cfg.extraction_version}:rerank",
+        prompt_cache_key=make_prompt_cache_key(cfg.prompt_cache_prefix, doc_id, cfg.extraction_version, "rerank"),
         max_output_tokens=cfg.max_output_tokens_rerank,
     )
 
@@ -194,7 +194,7 @@ def ask(
         ],
         schema=FINAL_ANSWER_SCHEMA,
         schema_name="final_answer",
-        prompt_cache_key=f"{cfg.prompt_cache_prefix}:{doc_id}:{cfg.extraction_version}:answer",
+        prompt_cache_key=make_prompt_cache_key(cfg.prompt_cache_prefix, doc_id, cfg.extraction_version, "answer"),
         max_output_tokens=cfg.max_output_tokens_answer,
     )
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
@@ -47,6 +48,7 @@ class OpenAIClient:
         for attempt in range(self.cfg.max_retries):
             raw = ""
             try:
+                safe_key = self._safe_cache_key(prompt_cache_key)
                 response = self.client.responses.create(
                     model=self.cfg.model,
                     instructions=instructions,
@@ -63,7 +65,7 @@ class OpenAIClient:
                             "schema": schema,
                         }
                     },
-                    prompt_cache_key=prompt_cache_key,
+                    prompt_cache_key=safe_key,
                 )
                 raw = self._extract_output_text(response)
                 return self._parse_and_validate(raw, schema)
@@ -75,7 +77,7 @@ class OpenAIClient:
                         raw_text=raw,
                         schema=schema,
                         schema_name=schema_name,
-                        prompt_cache_key=prompt_cache_key + ":repair",
+                        prompt_cache_key=self._safe_cache_key(f"{prompt_cache_key}:repair"),
                         max_output_tokens=max_output_tokens,
                     )
                     return repaired
@@ -129,7 +131,7 @@ class OpenAIClient:
                     "schema": schema,
                 }
             },
-            prompt_cache_key=prompt_cache_key,
+            prompt_cache_key=self._safe_cache_key(prompt_cache_key),
         )
         raw = self._extract_output_text(response)
         return self._parse_and_validate(raw, schema)
@@ -156,3 +158,10 @@ class OpenAIClient:
         base = 1.5 * (2 ** attempt)
         jitter = random.uniform(0, 0.25)
         time.sleep(base + jitter)
+
+    @staticmethod
+    def _safe_cache_key(key: str, max_len: int = 64) -> str:
+        if len(key) <= max_len:
+            return key
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        return f"{digest[:max_len]}"

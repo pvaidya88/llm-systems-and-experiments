@@ -7,6 +7,7 @@ from typing import Any
 from .config import Config
 from .openai_client import OpenAIClient
 from .schemas import FIGURE_SCHEMA
+from .utils import make_prompt_cache_key
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ def extract_figure(
     description: str | None,
 ) -> dict[str, Any]:
     file_id = openai_file_id or client.upload_file(page_pdf_path)
-    prompt_cache_key = f"{cfg.prompt_cache_prefix}:{doc_id}:{cfg.extraction_version}:figure"
+    prompt_cache_key = make_prompt_cache_key(cfg.prompt_cache_prefix, doc_id, cfg.extraction_version, "figure")
 
     descriptor = (
         f"Object ID: {object_id}\n"

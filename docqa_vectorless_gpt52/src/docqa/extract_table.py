@@ -7,7 +7,7 @@ from typing import Any
 from .config import Config
 from .openai_client import OpenAIClient
 from .schemas import TABLE_SCHEMA
-from .utils import parse_number
+from .utils import make_prompt_cache_key, parse_number
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def extract_table(
     description: str | None,
 ) -> dict[str, Any]:
     file_id = openai_file_id or client.upload_file(page_pdf_path)
-    prompt_cache_key = f"{cfg.prompt_cache_prefix}:{doc_id}:{cfg.extraction_version}:table"
+    prompt_cache_key = make_prompt_cache_key(cfg.prompt_cache_prefix, doc_id, cfg.extraction_version, "table")
 
     descriptor = (
         f"Object ID: {object_id}\n"

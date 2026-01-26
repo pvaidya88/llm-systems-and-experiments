@@ -7,7 +7,7 @@ from typing import Any
 from .config import Config
 from .openai_client import OpenAIClient
 from .schemas import INVENTORY_SCHEMA
-from .utils import slugify
+from .utils import make_prompt_cache_key, slugify
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,9 @@ def extract_page_inventory(
     openai_file_id: str | None,
 ) -> dict[str, Any]:
     file_id = openai_file_id or client.upload_file(page_pdf_path)
-    prompt_cache_key = f"{cfg.prompt_cache_prefix}:{doc_id}:{cfg.extraction_version}:inventory"
+    prompt_cache_key = make_prompt_cache_key(
+        cfg.prompt_cache_prefix, doc_id, cfg.extraction_version, "inventory"
+    )
 
     input_items = [
         {
