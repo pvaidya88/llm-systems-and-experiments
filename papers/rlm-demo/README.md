@@ -45,6 +45,14 @@ while the RLM uses the REPL to compute the correct answer from the full context.
 python -m examples.rlm_vs_rag_demo
 ```
 
+## Root vs sub-LM strength demo
+
+This example runs two experiments: a weak root+sub pair that fails and a strong pair that succeeds.
+
+```powershell
+python -m examples.root_sub_strength_demo
+```
+
 ## Notes
 
 - The system prompt in `rlm_demo/prompts.py` is a compact version of the Appendix D prompt described in the paper.
