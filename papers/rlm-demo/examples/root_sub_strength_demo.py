@@ -5,7 +5,10 @@ from datetime import date
 
 from rlm_demo import LLMClient, OpenAIResponsesClient, RLM, RLMOptions
 
-OUTPUT_PATTERN = re.compile(r"^eligible=(true|false), payout=(\d+)$", re.IGNORECASE)
+OUTPUT_PATTERN = re.compile(
+    r"^eligible\s*=\s*(true|false)\s*,\s*payout\s*=\s*(\d+)\s*$",
+    re.IGNORECASE,
+)
 
 
 class ScriptedLLM(LLMClient):
