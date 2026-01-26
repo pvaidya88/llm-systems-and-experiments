@@ -67,6 +67,8 @@ $env:SUB_MODEL_EFFORT = "medium"
 ```
 
 Note: `reasoning.effort` is only applied to reasoning-capable models (gpt-5 / o-series).
+Some weaker models may violate the REPL protocol (e.g., missing variables); the demo will report the error
+and continue so you can still see the strong-model result.
 
 To run the scripted (deterministic) version instead of live models:
 

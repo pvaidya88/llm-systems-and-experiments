@@ -76,7 +76,11 @@ def run_live_case(label, root_model, sub_model, query, context):
         text_verbosity=text_verbosity,
     )
     rlm = RLM(root_llm=root_client, sub_llm=sub_client)
-    answer = rlm.answer(query, context)
+    try:
+        answer = rlm.answer(query, context)
+    except Exception as exc:
+        print(f"{label} ({root_model} / {sub_model}) error: {exc}")
+        return f"<error: {exc}>"
     print(f"{label} ({root_model} / {sub_model}) answer: {answer}")
     return answer
 
