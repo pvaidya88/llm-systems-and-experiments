@@ -71,6 +71,9 @@ $env:MAX_ATTEMPTS = "2"
 $env:MAX_ATTEMPTS_WEAK = "1"
 $env:MAX_ATTEMPTS_STRONG = "3"
 $env:LOG_REPL_OUTPUTS = "1"
+$env:NUM_TRIALS = "10"
+$env:RANDOM_SEED = "42"
+$env:VERBOSE_TRIALS = "1"
 ```
 
 Note: `reasoning.effort` is only applied to reasoning-capable models (gpt-5 / o-series).

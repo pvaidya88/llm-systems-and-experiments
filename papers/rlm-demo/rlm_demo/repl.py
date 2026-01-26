@@ -18,7 +18,7 @@ class ReplEnvironment:
         stderr = io.StringIO()
         try:
             with redirect_stdout(stdout), redirect_stderr(stderr):
-                exec(code, self._globals, self._locals)
+                exec(code, self._globals)
         except Exception:
             err = traceback.format_exc()
             combined = (stdout.getvalue() + stderr.getvalue() + err).strip()
