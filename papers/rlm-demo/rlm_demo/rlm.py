@@ -18,6 +18,7 @@ class RLMOptions:
     max_sub_calls: int = 32
     include_cost_hint: bool = True
     require_repl: bool = False
+    retry_on_invalid: bool = False
 
 
 class RLM:
@@ -92,9 +93,35 @@ class RLM:
                         }
                     )
                     continue
-                return _resolve_final(final, repl)
+                try:
+                    return _resolve_final(final, repl)
+                except RuntimeError as exc:
+                    if self._options.retry_on_invalid:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Your FINAL_VAR referenced a variable that does not exist. "
+                                    "Run a ```repl``` block to define it, then respond with FINAL_VAR(...). "
+                                    f"Error: {exc}"
+                                ),
+                            }
+                        )
+                        continue
+                    raise
 
             if not repl_blocks:
+                if self._options.retry_on_invalid:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "Your response must include either a ```repl``` block "
+                                "or a FINAL(...) / FINAL_VAR(...) line. Try again."
+                            ),
+                        }
+                    )
+                    continue
                 raise RuntimeError("No repl block or FINAL found in assistant output")
 
         raise RuntimeError("Max steps reached without FINAL")

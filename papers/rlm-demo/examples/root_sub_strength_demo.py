@@ -120,7 +120,7 @@ def run_case(label, root_replies, sub_reply, query, context):
     rlm = RLM(
         root_llm=ScriptedLLM(root_replies),
         sub_llm=StaticLLM(sub_reply),
-        options=RLMOptions(require_repl=True, max_steps=10),
+        options=RLMOptions(require_repl=True, retry_on_invalid=True, max_steps=10),
     )
     answer = rlm.answer(query, context)
     normalized = normalize_answer(answer) or answer
@@ -159,7 +159,7 @@ def run_live_case(label, root_model, sub_model, query, context):
     rlm = RLM(
         root_llm=root_client,
         sub_llm=sub_client,
-        options=RLMOptions(require_repl=True, max_steps=10),
+        options=RLMOptions(require_repl=True, retry_on_invalid=True, max_steps=10),
     )
 
     max_attempts = int(os.environ.get("MAX_ATTEMPTS", "2"))
