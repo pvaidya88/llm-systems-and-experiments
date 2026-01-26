@@ -66,6 +66,8 @@ $env:ROOT_MODEL_EFFORT = "xhigh"
 $env:SUB_MODEL_EFFORT = "medium"
 ```
 
+Note: `reasoning.effort` is only applied to reasoning-capable models (gpt-5 / o-series).
+
 To run the scripted (deterministic) version instead of live models:
 
 ```powershell

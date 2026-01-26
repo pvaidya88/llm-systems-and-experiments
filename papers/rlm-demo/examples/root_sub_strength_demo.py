@@ -40,6 +40,13 @@ def run_case(label, root_replies, sub_reply, query, context):
     return answer
 
 
+def supports_reasoning_model(model_name):
+    if not model_name:
+        return False
+    name = model_name.strip().lower()
+    return name.startswith("gpt-5") or name.startswith("o")
+
+
 def run_live_case(label, root_model, sub_model, query, context):
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -58,14 +65,14 @@ def run_live_case(label, root_model, sub_model, query, context):
         api_key=api_key,
         base_url=base_url,
         model=root_model,
-        reasoning_effort=root_effort,
+        reasoning_effort=root_effort if supports_reasoning_model(root_model) else None,
         text_verbosity=text_verbosity,
     )
     sub_client = OpenAIResponsesClient(
         api_key=api_key,
         base_url=base_url,
         model=sub_model,
-        reasoning_effort=sub_effort,
+        reasoning_effort=sub_effort if supports_reasoning_model(sub_model) else None,
         text_verbosity=text_verbosity,
     )
     rlm = RLM(root_llm=root_client, sub_llm=sub_client)
