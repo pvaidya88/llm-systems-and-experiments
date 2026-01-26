@@ -46,13 +46,14 @@ def normalize_answer(text):
     return f"eligible={match.group(1).lower()}, payout={int(match.group(2))}"
 
 
-def build_query(base_query, attempt, last_error):
+def build_query(base_query, attempt, last_error, incorrect=False):
     if attempt == 0:
         return base_query
     return (
         base_query
         + "\n\nYour previous answer was invalid. "
         + (f"Error: {last_error}. " if last_error else "")
+        + ("Your previous answer was incorrect. Recompute from the policy and CSV. " if incorrect else "")
         + "Return EXACTLY: eligible=<true|false>, payout=<int>. No extra text."
     )
 
@@ -173,7 +174,7 @@ def run_case(label, root_replies, sub_reply, query, context):
     return normalized
 
 
-def run_live_case(label, root_model, sub_model, query, context):
+def run_live_case(label, root_model, sub_model, query, context, expected, max_attempts):
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("Set OPENAI_API_KEY to run live model experiments.")
@@ -201,17 +202,23 @@ def run_live_case(label, root_model, sub_model, query, context):
         reasoning_effort=sub_effort if supports_reasoning_model(sub_model) else None,
         text_verbosity=text_verbosity,
     )
+    log_repl = os.environ.get("LOG_REPL_OUTPUTS") == "1"
     rlm = RLM(
         root_llm=root_client,
         sub_llm=sub_client,
-        options=RLMOptions(require_repl=True, retry_on_invalid=True, max_steps=10),
+        options=RLMOptions(
+            require_repl=True,
+            retry_on_invalid=True,
+            log_repl_outputs=log_repl,
+            max_steps=10,
+        ),
     )
 
-    max_attempts = int(os.environ.get("MAX_ATTEMPTS", "2"))
     last_error = None
     last_answer = None
+    last_incorrect = False
     for attempt in range(max_attempts):
-        attempt_query = build_query(query, attempt, last_error)
+        attempt_query = build_query(query, attempt, last_error, incorrect=last_incorrect)
         try:
             answer = rlm.answer(attempt_query, context)
         except Exception as exc:
@@ -220,9 +227,14 @@ def run_live_case(label, root_model, sub_model, query, context):
         last_answer = answer
         normalized = normalize_answer(answer)
         if normalized:
-            print(f"{label} ({root_model} / {sub_model}) answer: {normalized}")
-            return normalized
+            if normalized == expected:
+                print(f"{label} ({root_model} / {sub_model}) answer: {normalized}")
+                return normalized
+            last_error = f"incorrect answer: {normalized}"
+            last_incorrect = True
+            continue
         last_error = f"invalid format: {answer}"
+        last_incorrect = False
 
     print(f"{label} ({root_model} / {sub_model}) invalid output: {last_answer}")
     return f"<invalid: {last_answer}>"
@@ -372,9 +384,18 @@ print(answer)
         weak_sub_model = os.environ.get("WEAK_SUB_MODEL", "gpt-4.1-nano")
         strong_root_model = os.environ.get("STRONG_ROOT_MODEL", "gpt-5.2")
         strong_sub_model = os.environ.get("STRONG_SUB_MODEL", "gpt-5.2")
+        default_attempts = int(os.environ.get("MAX_ATTEMPTS", "2"))
+        weak_attempts = int(os.environ.get("MAX_ATTEMPTS_WEAK", str(default_attempts)))
+        strong_attempts = int(os.environ.get("MAX_ATTEMPTS_STRONG", str(default_attempts)))
 
         weak_answer = run_live_case(
-            "Weak root + weak sub", weak_root_model, weak_sub_model, query, context
+            "Weak root + weak sub",
+            weak_root_model,
+            weak_sub_model,
+            query,
+            context,
+            expected,
+            weak_attempts,
         )
         strong_answer = run_live_case(
             "Strong root + strong sub",
@@ -382,6 +403,8 @@ print(answer)
             strong_sub_model,
             query,
             context,
+            expected,
+            strong_attempts,
         )
 
     if weak_answer != expected and strong_answer == expected:

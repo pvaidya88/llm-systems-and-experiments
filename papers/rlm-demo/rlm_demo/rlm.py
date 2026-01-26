@@ -19,6 +19,7 @@ class RLMOptions:
     include_cost_hint: bool = True
     require_repl: bool = False
     retry_on_invalid: bool = False
+    log_repl_outputs: bool = False
 
 
 class RLM:
@@ -77,7 +78,10 @@ class RLM:
                 for block in repl_blocks:
                     outputs.append(repl.exec(block))
 
-                messages.append({"role": "user", "content": _format_repl_outputs(outputs)})
+                formatted_outputs = _format_repl_outputs(outputs)
+                if self._options.log_repl_outputs:
+                    print(formatted_outputs)
+                messages.append({"role": "user", "content": formatted_outputs})
 
             final = _extract_final(assistant)
             if final is not None:
