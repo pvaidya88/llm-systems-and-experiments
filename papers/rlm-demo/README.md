@@ -47,9 +47,27 @@ python -m examples.rlm_vs_rag_demo
 
 ## Root vs sub-LM strength demo
 
-This example runs two experiments: a weak root+sub pair that fails and a strong pair that succeeds.
+This example runs two experiments: a weak root+sub pair and a strong pair using actual OpenAI models.
+Defaults: weak = gpt-4.1-nano, strong = gpt-5.2. Override with env vars below.
 
 ```powershell
+python -m examples.root_sub_strength_demo
+```
+
+Environment overrides:
+
+```powershell
+$env:OPENAI_API_KEY = "your-api-key"
+$env:WEAK_ROOT_MODEL = "gpt-4.1-nano"
+$env:WEAK_SUB_MODEL = "gpt-4.1-nano"
+$env:STRONG_ROOT_MODEL = "gpt-5.2"
+$env:STRONG_SUB_MODEL = "gpt-5.2"
+```
+
+To run the scripted (deterministic) version instead of live models:
+
+```powershell
+$env:USE_SCRIPTED_DEMO = "1"
 python -m examples.root_sub_strength_demo
 ```
 

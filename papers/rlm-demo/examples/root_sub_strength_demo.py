@@ -1,4 +1,6 @@
-from rlm_demo import LLMClient, RLM
+import os
+
+from rlm_demo import LLMClient, OpenAIResponsesClient, RLM
 
 
 class ScriptedLLM(LLMClient):
@@ -38,6 +40,40 @@ def run_case(label, root_replies, sub_reply, query, context):
     return answer
 
 
+def run_live_case(label, root_model, sub_model, query, context):
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("Set OPENAI_API_KEY to run live model experiments.")
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    text_verbosity = os.environ.get("OPENAI_TEXT_VERBOSITY", "medium")
+
+    def normalize_effort(value):
+        value = (value or "").strip()
+        return value if value else None
+
+    root_effort = normalize_effort(os.environ.get("ROOT_MODEL_EFFORT"))
+    sub_effort = normalize_effort(os.environ.get("SUB_MODEL_EFFORT"))
+
+    root_client = OpenAIResponsesClient(
+        api_key=api_key,
+        base_url=base_url,
+        model=root_model,
+        reasoning_effort=root_effort,
+        text_verbosity=text_verbosity,
+    )
+    sub_client = OpenAIResponsesClient(
+        api_key=api_key,
+        base_url=base_url,
+        model=sub_model,
+        reasoning_effort=sub_effort,
+        text_verbosity=text_verbosity,
+    )
+    rlm = RLM(root_llm=root_client, sub_llm=sub_client)
+    answer = rlm.answer(query, context)
+    print(f"{label} ({root_model} / {sub_model}) answer: {answer}")
+    return answer
+
+
 def main():
     policy = """\
 Rules:
@@ -52,7 +88,10 @@ C101,Gold,2000,in-network
 C102,Silver,1500,out of network; emergency towing
 """
     context = [policy, claims_csv]
-    query = "For claim C100, is it eligible and what is the payout?"
+    query = (
+        "Use the REPL to parse the CSV and policy. If needed, call llm_query to "
+        "interpret the note. For claim C100, is it eligible and what is the payout?"
+    )
 
     weak_root = [
         """```repl
@@ -121,12 +160,30 @@ print(answer)
     )
     print("Expected:", expected)
 
-    weak_answer = run_case(
-        "Weak root + weak sub", weak_root, weak_sub, query, context
-    )
-    strong_answer = run_case(
-        "Strong root + strong sub", strong_root, strong_sub, query, context
-    )
+    use_scripted = os.environ.get("USE_SCRIPTED_DEMO") == "1"
+    if use_scripted:
+        weak_answer = run_case(
+            "Weak root + weak sub", weak_root, weak_sub, query, context
+        )
+        strong_answer = run_case(
+            "Strong root + strong sub", strong_root, strong_sub, query, context
+        )
+    else:
+        weak_root_model = os.environ.get("WEAK_ROOT_MODEL", "gpt-4.1-nano")
+        weak_sub_model = os.environ.get("WEAK_SUB_MODEL", "gpt-4.1-nano")
+        strong_root_model = os.environ.get("STRONG_ROOT_MODEL", "gpt-5.2")
+        strong_sub_model = os.environ.get("STRONG_SUB_MODEL", "gpt-5.2")
+
+        weak_answer = run_live_case(
+            "Weak root + weak sub", weak_root_model, weak_sub_model, query, context
+        )
+        strong_answer = run_live_case(
+            "Strong root + strong sub",
+            strong_root_model,
+            strong_sub_model,
+            query,
+            context,
+        )
 
     if weak_answer != expected and strong_answer == expected:
         print("Result: weak models fail, strong models succeed.")
