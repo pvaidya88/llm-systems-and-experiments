@@ -62,6 +62,8 @@ $env:WEAK_ROOT_MODEL = "gpt-4.1-nano"
 $env:WEAK_SUB_MODEL = "gpt-4.1-nano"
 $env:STRONG_ROOT_MODEL = "gpt-5.2"
 $env:STRONG_SUB_MODEL = "gpt-5.2"
+$env:ROOT_MODEL_EFFORT = "xhigh"
+$env:SUB_MODEL_EFFORT = "medium"
 ```
 
 To run the scripted (deterministic) version instead of live models:
