@@ -54,28 +54,70 @@ def build_query(base_query, attempt, last_error):
     )
 
 
+def _has_affirmed(note_lower, pattern):
+    for match in re.finditer(pattern, note_lower):
+        prefix = note_lower[: match.start()]
+        tokens = re.findall(r"\b\w+\b", prefix)
+        last_tokens = tokens[-3:]
+        if any(
+            token in ("no", "not", "never", "without", "denies", "denied", "declines", "declined")
+            for token in last_tokens
+        ):
+            continue
+        return True
+    return False
+
+
+def _has_affirmed_any(note_lower, patterns):
+    return any(_has_affirmed(note_lower, pattern) for pattern in patterns)
+
+
 def parse_note_flags(note):
     note_lower = note.lower()
-    emergency = any(
-        term in note_lower
-        for term in (
-            "emergency towing",
-            "towed",
-            "tow truck",
-            "towing",
-            "vehicle immobile",
-            "immobile",
-            "stalled on highway",
-        )
-    )
-    preauth = bool(re.search(r"\bpa-\d+\b", note_lower)) or "preauth" in note_lower
-    out_of_network = (
-        "out of network" in note_lower
-        or "out-of-network" in note_lower
-        or "oon" in note_lower
-    )
-    immobile = "immobile" in note_lower or "cannot move" in note_lower
-    return emergency, preauth, out_of_network, immobile
+
+    emergency_patterns = [
+        r"\bemergency towing\b",
+        r"\btow(?:ed|ing)?\b",
+        r"\btow truck\b",
+        r"\bflatbed\b",
+        r"\bwrecker\b",
+        r"\bwinch(?:ed|ing)?\b",
+        r"\brecovery vehicle\b",
+        r"\bvehicle recovery\b",
+        r"\bpulled from ditch\b",
+    ]
+    immobile_patterns = [
+        r"\bimmobile\b",
+        r"\bwould not start\b",
+        r"\bunable to move\b",
+        r"\bdisabled vehicle\b",
+        r"\bstalled on highway\b",
+        r"\bcannot move\b",
+    ]
+    roadside_only_patterns = [
+        r"\broadside assistance only\b",
+        r"\broadside only\b",
+        r"\bjump start only\b",
+        r"\btire change only\b",
+        r"\blockout only\b",
+    ]
+    out_of_network_patterns = [
+        r"\bout of network\b",
+        r"\bout-of-network\b",
+        r"\boon\b",
+        r"\bnon[- ]network\b",
+    ]
+
+    emergency = _has_affirmed_any(note_lower, emergency_patterns)
+    immobile = _has_affirmed_any(note_lower, immobile_patterns)
+    roadside_only = _has_affirmed_any(note_lower, roadside_only_patterns)
+    out_of_network = _has_affirmed_any(note_lower, out_of_network_patterns)
+
+    preauth = bool(re.search(r"\bpa-\d{3,}\b", note_lower))
+    preauth = preauth or "preauth" in note_lower or "pre-auth" in note_lower
+    preauth = preauth or "pre authorization" in note_lower or "pre-authorization" in note_lower
+
+    return emergency, preauth, out_of_network, immobile, roadside_only
 
 
 def compute_expected(row):
@@ -85,15 +127,15 @@ def compute_expected(row):
     filed_date = date.fromisoformat(row["filed_date"])
     note = row["note"]
 
-    emergency, preauth, out_of_network, immobile = parse_note_flags(note)
+    emergency, preauth, out_of_network, immobile, roadside_only = parse_note_flags(note)
     timely = (filed_date - service_date).days <= 30
 
-    if out_of_network or not timely:
+    if out_of_network or roadside_only or not timely:
         eligible = False
     elif plan == "Gold":
         eligible = True
     elif plan == "Silver":
-        eligible = emergency and preauth
+        eligible = emergency and preauth and immobile
     elif plan == "Bronze":
         eligible = emergency and immobile and amount <= 1200
     else:
@@ -186,21 +228,26 @@ def run_live_case(label, root_model, sub_model, query, context):
 def main():
     policy = """\
 Rules:
-1) Ineligible if note indicates out-of-network ("out of network" or "OON").
-2) Claim must be filed within 30 days of service_date.
-3) Eligibility by plan:
-   - Gold: eligible if rules 1-2 pass.
-   - Silver: eligible only if note implies emergency towing AND a pre-authorization code is present.
-   - Bronze: eligible only if note implies emergency towing, the vehicle was immobile, AND amount <= 1200.
-4) Payout = min(max(amount - deductible, 0), cap).
+1) Ineligible if note indicates out-of-network (e.g., "out of network", "OON", "non-network").
+   Negated mentions like "not out-of-network" do NOT count as out-of-network.
+2) Ineligible if note indicates "roadside assistance only" (or similar), unless explicitly negated.
+   Example: "NOT roadside assistance only" does NOT trigger this rule.
+3) Claim must be filed within 30 days of service_date.
+4) Eligibility by plan:
+   - Gold: eligible if rules 1-3 pass.
+   - Silver: eligible only if note implies emergency towing, a pre-authorization code is present,
+     AND the vehicle was immobile.
+   - Bronze: eligible only if note implies emergency towing, the vehicle was immobile,
+     AND amount <= 1200.
+5) Payout = min(max(amount - deductible, 0), cap).
    - Deductible: Gold 100, Silver 200, Bronze 300.
    - Cap: Gold 3000, Silver 1500, Bronze 800.
 """
 
     claims_csv = """\
 id,plan,amount,service_date,filed_date,note
-C100,Silver,1800,2024-08-01,2024-08-20,Towed from highway after engine failure; preauth code PA-8842; in network
-C101,Gold,500,2024-06-10,2024-07-25,in-network
+C100,Silver,1800,2024-08-01,2024-08-20,NOT roadside assistance only; vehicle would not start and was immobile; flatbed tow arranged after engine failure; pre-auth approved PA-8842; not out-of-network
+C101,Gold,500,2024-06-10,2024-07-25,in-network; no tow needed
 C102,Bronze,1000,2024-08-03,2024-08-05,Vehicle immobile; tow truck dispatched; in-network
 C103,Silver,900,2024-08-02,2024-08-10,Roadside assistance only; no tow; OON
 """
@@ -208,7 +255,8 @@ C103,Silver,900,2024-08-02,2024-08-10,Roadside assistance only; no tow; OON
     context = [policy, claims_csv]
     query = (
         "Use the REPL to parse the policy and CSV. "
-        "If needed, call llm_query to classify the note (emergency towing? preauth code present?). "
+        "If needed, call llm_query to classify the note (emergency towing? preauth present? immobile?). "
+        "Pay attention to negations like 'not out-of-network' and 'NOT roadside assistance only'. "
         "Return EXACTLY: eligible=<true|false>, payout=<int>. No extra text. "
         "Question: For claim C100, is it eligible and what is the payout?"
     )
