@@ -32,6 +32,10 @@ To limit processing to the first N pages:
 ```bash
 docqa ingest path/to/report.pdf --max-pages 5
 ```
+To ingest specific pages (comma-separated or ranges):
+```bash
+docqa ingest path/to/report.pdf --page-list "3,7,10-12"
+```
 
 ### Ask
 ```bash

@@ -11,17 +11,33 @@ from .db import get_conn, init_db, list_documents
 from .ingest import ingest_document
 from .openai_client import OpenAIClient
 from .qa import ask as ask_question
+from .utils import parse_page_list
 
 app = typer.Typer(help="Vectorless document QA with GPT-5.2")
 
 
 @app.command()
-def ingest(path: str, force: bool = False, max_pages: int | None = None) -> None:
+def ingest(
+    path: str,
+    force: bool = False,
+    max_pages: int | None = None,
+    page_list: str | None = None,
+) -> None:
     """Ingest a document (PDF required; DOCX/PPTX optional if conversion available)."""
     cfg = load_config()
     ensure_dirs(cfg)
     client = OpenAIClient(cfg)
-    doc_id = ingest_document(path=Path(path), cfg=cfg, client=client, force=force, max_pages=max_pages)
+    pages = parse_page_list(page_list) if page_list else None
+    if pages and max_pages:
+        raise typer.BadParameter("Use either --max-pages or --page-list, not both.")
+    doc_id = ingest_document(
+        path=Path(path),
+        cfg=cfg,
+        client=client,
+        force=force,
+        max_pages=max_pages,
+        page_numbers=pages,
+    )
     typer.echo(doc_id)
 
 

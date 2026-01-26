@@ -30,6 +30,38 @@ def make_prompt_cache_key(prefix: str, *parts: str, max_len: int = 64) -> str:
     return f"{trimmed_prefix}:{digest[:12]}"
 
 
+def parse_page_list(value: str) -> list[int]:
+    if not value:
+        return []
+    pages: list[int] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_str, end_str = part.split("-", 1)
+            if not start_str or not end_str:
+                raise ValueError(f"Invalid page range: {part}")
+            start = int(start_str)
+            end = int(end_str)
+            if start <= 0 or end <= 0 or end < start:
+                raise ValueError(f"Invalid page range: {part}")
+            pages.extend(range(start, end + 1))
+        else:
+            page = int(part)
+            if page <= 0:
+                raise ValueError(f"Invalid page number: {part}")
+            pages.append(page)
+
+    seen: set[int] = set()
+    ordered: list[int] = []
+    for page in pages:
+        if page not in seen:
+            ordered.append(page)
+            seen.add(page)
+    return ordered
+
+
 def slugify(text: str) -> str:
     text = text.lower().strip()
     text = re.sub(r"[^a-z0-9]+", "-", text)

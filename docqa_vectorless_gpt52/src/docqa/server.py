@@ -21,6 +21,7 @@ class IngestRequest(BaseModel):
     path: str
     force: bool = False
     max_pages: int | None = None
+    page_numbers: list[int] | None = None
 
 
 class AskRequest(BaseModel):
@@ -55,6 +56,7 @@ def ingest(req: IngestRequest) -> dict[str, str]:
             client=client,
             force=req.force,
             max_pages=req.max_pages,
+            page_numbers=req.page_numbers,
         )
         return {"doc_id": doc_id, "status": "READY"}
     except Exception as exc:  # noqa: BLE001

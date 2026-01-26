@@ -34,6 +34,7 @@ def ingest_document(
     client: OpenAIClient,
     force: bool = False,
     max_pages: int | None = None,
+    page_numbers: list[int] | None = None,
 ) -> str:
     ensure_dirs(cfg)
     conn = get_conn(cfg.db_path)
@@ -65,7 +66,13 @@ def ingest_document(
         conn.commit()
 
     total_pages = pdf_page_count(pdf_path)
-    num_pages = min(total_pages, max_pages) if max_pages else total_pages
+    if page_numbers:
+        invalid = [p for p in page_numbers if p < 1 or p > total_pages]
+        if invalid:
+            raise ValueError(f"Invalid page numbers: {invalid}")
+        num_pages = len(page_numbers)
+    else:
+        num_pages = min(total_pages, max_pages) if max_pages else total_pages
     upsert_document(
         conn,
         doc_id=doc_id,
@@ -78,7 +85,7 @@ def ingest_document(
     )
 
     page_dir = cfg.data_dir / "pages" / doc_id
-    page_paths = split_pdf(pdf_path, page_dir, max_pages=max_pages)
+    page_paths = split_pdf(pdf_path, page_dir, max_pages=max_pages, page_numbers=page_numbers)
 
     for page_number, page_path in enumerate(page_paths, start=1):
         file_id = client.upload_file(page_path)
