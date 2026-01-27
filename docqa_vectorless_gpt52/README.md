@@ -3,6 +3,10 @@
 Vectorless document QA with table and chart extraction using only OpenAI GPT-5.2 via the Responses API.
 No tools, no embeddings, no vector DB.
 
+## Why it matters
+- Shows a document QA pipeline under strict constraints when vector search is not allowed
+- Uses deterministic numeric analysis and evidence assembly for reliable answers
+
 ## Features
 - PDF ingestion (DOCX/PPTX optional if conversion deps are installed)
 - Split PDFs into single-page PDFs
@@ -13,6 +17,10 @@ No tools, no embeddings, no vector DB.
 - Deterministic numeric analysis for comparisons and aggregations
 - Final answers with citations
 - CLI and FastAPI server
+
+## What to look at
+- `src/docqa/` for the ingestion, retrieval, and answer assembly pipeline
+- CLI commands below for a full end to end demo
 
 ## Requirements
 - Python 3.10+
@@ -43,6 +51,8 @@ docqa ingest path/to/report.pdf --page-list "3,7,10-12"
 ```bash
 docqa ask <doc_id> "Compare Table 1 vs Table 2 commitments and explain the main difference."
 ```
+
+Expected result: an answer with citations pointing to extracted tables or text.
 
 ### Serve
 ```bash

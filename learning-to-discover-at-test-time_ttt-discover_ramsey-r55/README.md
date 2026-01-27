@@ -8,6 +8,14 @@ The implementation is CPU-first and uses a lightweight edge-flip policy (learned
 a PUCT-style state buffer with max-reward Q(s), and an adaptive entropic objective where
 KL(q_beta || uniform) = ln 2.
 
+## Why it matters
+- Demonstrates a reproducible search and verification loop for a hard combinatorial problem
+- Logs intermediate checkpoints for inspection and offline analysis
+
+## What to look at
+- `scripts/run_search.py` for the search loop
+- `scripts/verify_graph.py` for deterministic verification
+
 ## Requirements
 - Python 3.10+
 
@@ -36,6 +44,8 @@ Each run creates an `outputs/run_...` folder with:
 - `checkpoint.json` (search state summary)
 - `run.log` (step-by-step metrics)
 - `verification_log.json` (only when a valid graph is confirmed twice)
+
+Expected result: repeated runs with a fixed seed are deterministic and produce the same checkpoints.
 
 ## Notes
 - Deterministic given a seed (all randomness from a single RNG).

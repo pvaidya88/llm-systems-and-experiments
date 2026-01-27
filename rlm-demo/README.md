@@ -4,6 +4,14 @@ Minimal, dependency-light implementation of Recursive Language Models (RLMs) ins
 The RLM treats long context as an external resource accessed through a Python REPL instead of stuffing
 it into the prompt.
 
+## Why it matters
+- Demonstrates a clean separation between reasoning and tool use on long context
+- Shows how root and sub model strength affects outcomes under different load bearing regimes
+
+## What to look at
+- `rlm_demo/repl.py` for the REPL interface and execution loop
+- `examples/root_sub_strength_demo.py` for root vs sub model experiments
+
 ## Quick start (dummy model)
 
 This uses scripted LLM responses to exercise the REPL loop:
@@ -37,6 +45,10 @@ python -m examples.openai_responses_run
 ```
 
 Note: Keep your API key out of source control; prefer environment variables.
+
+## Expected outputs
+- Pass rate summaries per root and sub model configuration
+- Counts of invalid outputs and max step errors to diagnose brittleness
 
 ## Demos
 
