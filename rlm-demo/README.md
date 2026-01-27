@@ -76,9 +76,13 @@ $env:ROOTLM_LOAD_BEARING = "0"
 $env:ROOT_STRICT_REPL_TEMPLATE = "1"
 $env:HIDE_NOTE_FROM_ROOT = "1"
 $env:MIN_SUB_CALLS = "5"
+$env:MAX_SUB_CALLS = "32"
+$env:SUB_MITIGATE = "0"
+$env:SUB_VOTE_K = "3"
 $env:LLM_YESNO_MAX_RETRIES = "4"
 $env:FIXED_TRIALS = "1"
 $env:STRICT_REPL_TEMPLATE = "1"
+$env:HARD_NOTES = "0"
 $env:FULL_FACTORIAL = "0"
 $env:ORACLE_ABLATIONS = "0"
 $env:LOG_REPL_OUTPUTS = "1"
@@ -94,8 +98,13 @@ Note: `gpt-4.1-nano` only supports `OPENAI_TEXT_VERBOSITY=medium`; the demo will
 Note: set `ROOTLM_LOAD_BEARING=1` to force the root model to parse the note without any sub-LM calls.
 Note: set `ROOT_STRICT_REPL_TEMPLATE=1` to force a fixed REPL block in root-load-bearing mode.
 Note: set `HIDE_NOTE_FROM_ROOT=1` to redact the note from the root and force `note_yesno` in sub-load-bearing mode.
+Note: set `SUB_MITIGATE=1` (and optionally `SUB_VOTE_K`) to majority-vote sub-classification calls.
+Note: set `HARD_NOTES=1` to use harder note variants (useful to break ceiling in root-load-bearing).
+Note: set `MAX_SUB_CALLS` if you increase `SUB_VOTE_K` or `LLM_YESNO_MAX_RETRIES`.
 Note: set `FULL_FACTORIAL=1` to run the 2×2 strong/weak root×sub grid for both regimes.
 Note: set `ORACLE_ABLATIONS=1` to report oracle-root (sub classification only) and oracle-sub (root only) results.
+Tip: to stress root-load-bearing, set `HARD_NOTES=1` and `ROOT_STRICT_REPL_TEMPLATE=0`.
+Tip: to test sub-load-bearing mitigation, set `SUB_MITIGATE=1` and `STRICT_REPL_TEMPLATE=0`.
 
 To run the scripted (deterministic) version instead of live models:
 

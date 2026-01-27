@@ -99,99 +99,76 @@ def build_query(base_query, attempt, last_error, incorrect=False):
     )
 
 
+def build_strict_sub_repl_query(hidden_note, vote_k=1):
+    helper = ""
+    if vote_k > 1:
+        helper = f"""
+def majority_yesno(fn, question):
+    votes = []
+    for _ in range({vote_k}):
+        votes.append(fn(question))
+    yes_votes = sum(1 for v in votes if v == "yes")
+    no_votes = sum(1 for v in votes if v == "no")
+    return "yes" if yes_votes >= no_votes else "no"
+"""
+    fn_name = "note_yesno" if hidden_note else "llm_query_yesno"
+    call = "majority_yesno" if vote_k > 1 else fn_name
+    note_line = "" if hidden_note else "note = row[\"note\"]\n\n"
+    def q(text):
+        if hidden_note:
+            return f"\"{text}\""
+        return f"\"{text} Note: \" + note"
+    repl_block = f"""```repl
+import csv
+from datetime import date
+policy, claims_csv = context
+reader = csv.DictReader([line for line in claims_csv.splitlines() if line.strip()])
+rows = list(reader)
+row = [r for r in rows if r["id"] == "C100"][0]
+amount = int(row["amount"])
+service_date = date.fromisoformat(row["service_date"])
+filed_date = date.fromisoformat(row["filed_date"])
+{note_line}{helper}
+emergency = {call}({fn_name}, {q("Does the note imply emergency towing?")}) == "yes"
+preauth = {call}({fn_name}, {q("Is a pre-authorization present?")}) == "yes"
+immobile = {call}({fn_name}, {q("Was the vehicle immobile?")}) == "yes"
+out_of_network = {call}({fn_name}, {q("Is it out-of-network?")}) == "yes"
+roadside_only = {call}({fn_name}, {q("Is it roadside assistance only?")}) == "yes"
+
+timely = (filed_date - service_date).days <= 30
+
+if out_of_network or roadside_only or not timely:
+    eligible = False
+elif row["plan"] == "Gold":
+    eligible = True
+elif row["plan"] == "Silver":
+    eligible = emergency and preauth and immobile
+elif row["plan"] == "Bronze":
+    eligible = emergency and immobile and amount <= 1200
+else:
+    eligible = False
+
+payout = 0
+if eligible:
+    deductibles = {{"Gold": 100, "Silver": 200, "Bronze": 300}}
+    caps = {{"Gold": 3000, "Silver": 1500, "Bronze": 800}}
+    payout = min(max(amount - deductibles.get(row["plan"], 0), 0), caps.get(row["plan"], amount))
+
+answer = f"eligible={{str(eligible).lower()}}, payout={{payout}}"
+```"""
+    return (
+        "In your next reply, output EXACTLY the following REPL block, unchanged, "
+        "then on a new line output FINAL_VAR(answer). Do not add any other text.\n\n"
+        + repl_block
+    )
+
+
 def build_strict_repl_query():
-    repl_block = """```repl
-import csv
-from datetime import date
-
-policy, claims_csv = context
-reader = csv.DictReader([line for line in claims_csv.splitlines() if line.strip()])
-rows = list(reader)
-row = [r for r in rows if r["id"] == "C100"][0]
-amount = int(row["amount"])
-service_date = date.fromisoformat(row["service_date"])
-filed_date = date.fromisoformat(row["filed_date"])
-note = row["note"]
-
-emergency = llm_query_yesno("Does the note imply emergency towing? Note: " + note) == "yes"
-preauth = llm_query_yesno("Is a pre-authorization present? Note: " + note) == "yes"
-immobile = llm_query_yesno("Was the vehicle immobile? Note: " + note) == "yes"
-out_of_network = llm_query_yesno("Is it out-of-network? Note: " + note) == "yes"
-roadside_only = llm_query_yesno("Is it roadside assistance only? Note: " + note) == "yes"
-
-timely = (filed_date - service_date).days <= 30
-
-if out_of_network or roadside_only or not timely:
-    eligible = False
-elif row["plan"] == "Gold":
-    eligible = True
-elif row["plan"] == "Silver":
-    eligible = emergency and preauth and immobile
-elif row["plan"] == "Bronze":
-    eligible = emergency and immobile and amount <= 1200
-else:
-    eligible = False
-
-payout = 0
-if eligible:
-    deductibles = {"Gold": 100, "Silver": 200, "Bronze": 300}
-    caps = {"Gold": 3000, "Silver": 1500, "Bronze": 800}
-    payout = min(max(amount - deductibles.get(row["plan"], 0), 0), caps.get(row["plan"], amount))
-
-answer = f"eligible={str(eligible).lower()}, payout={payout}"
-```"""
-    return (
-        "In your next reply, output EXACTLY the following REPL block, unchanged, "
-        "then on a new line output FINAL_VAR(answer). Do not add any other text.\n\n"
-        + repl_block
-    )
+    return build_strict_sub_repl_query(hidden_note=False, vote_k=1)
 
 
-def build_strict_repl_query_hidden():
-    repl_block = """```repl
-import csv
-from datetime import date
-
-policy, claims_csv = context
-reader = csv.DictReader([line for line in claims_csv.splitlines() if line.strip()])
-rows = list(reader)
-row = [r for r in rows if r["id"] == "C100"][0]
-amount = int(row["amount"])
-service_date = date.fromisoformat(row["service_date"])
-filed_date = date.fromisoformat(row["filed_date"])
-
-emergency = note_yesno("Does the note imply emergency towing?") == "yes"
-preauth = note_yesno("Is a pre-authorization present?") == "yes"
-immobile = note_yesno("Was the vehicle immobile?") == "yes"
-out_of_network = note_yesno("Is it out-of-network?") == "yes"
-roadside_only = note_yesno("Is it roadside assistance only?") == "yes"
-
-timely = (filed_date - service_date).days <= 30
-
-if out_of_network or roadside_only or not timely:
-    eligible = False
-elif row["plan"] == "Gold":
-    eligible = True
-elif row["plan"] == "Silver":
-    eligible = emergency and preauth and immobile
-elif row["plan"] == "Bronze":
-    eligible = emergency and immobile and amount <= 1200
-else:
-    eligible = False
-
-payout = 0
-if eligible:
-    deductibles = {"Gold": 100, "Silver": 200, "Bronze": 300}
-    caps = {"Gold": 3000, "Silver": 1500, "Bronze": 800}
-    payout = min(max(amount - deductibles.get(row["plan"], 0), 0), caps.get(row["plan"], amount))
-
-answer = f"eligible={str(eligible).lower()}, payout={payout}"
-```"""
-    return (
-        "In your next reply, output EXACTLY the following REPL block, unchanged, "
-        "then on a new line output FINAL_VAR(answer). Do not add any other text.\n\n"
-        + repl_block
-    )
+def build_strict_repl_query_hidden(vote_k=1):
+    return build_strict_sub_repl_query(hidden_note=True, vote_k=vote_k)
 
 
 def build_oracle_flags_query(flags):
@@ -691,6 +668,7 @@ def select_query(
     strict_template,
     root_strict_template,
     hide_note_from_root,
+    sub_vote_k,
     query_variants,
     sub_lm_query_variants,
     sub_lm_query_variants_hidden,
@@ -699,10 +677,8 @@ def select_query(
     randomize,
 ):
     if strict_template and not force_root_lm:
-        return (
-            build_strict_repl_query_hidden()
-            if hide_note_from_root
-            else build_strict_repl_query()
+        return build_strict_sub_repl_query(
+            hidden_note=hide_note_from_root, vote_k=sub_vote_k
         )
     if force_root_lm:
         if root_strict_template:
@@ -725,6 +701,7 @@ def build_trial_set(
     strict_template,
     root_strict_template,
     hide_note_from_root,
+    sub_vote_k,
     query_variants,
     sub_lm_query_variants,
     sub_lm_query_variants_hidden,
@@ -746,6 +723,7 @@ def build_trial_set(
             strict_template,
             root_strict_template,
             hide_note_from_root,
+            sub_vote_k,
             query_variants,
             sub_lm_query_variants,
             sub_lm_query_variants_hidden,
@@ -855,6 +833,7 @@ def run_full_factorial_suite(
     strict_template,
     root_strict_template,
     hide_note_from_root,
+    sub_vote_k,
     max_steps,
     max_attempts,
 ):
@@ -875,6 +854,7 @@ def run_full_factorial_suite(
             strict_template,
             root_strict_template,
             hide_note_from_root if force_sub_lm else False,
+            sub_vote_k,
             query_variants,
             sub_lm_query_variants,
             sub_lm_query_variants_hidden,
@@ -890,6 +870,15 @@ def run_full_factorial_suite(
         counts_by_combo = {}
         min_sub_calls = 5 if force_sub_lm else 0
         max_sub_calls = 0 if force_root_lm else None
+        if not force_root_lm:
+            override = os.environ.get("MAX_SUB_CALLS")
+            if override:
+                max_sub_calls = int(override)
+            elif force_sub_lm and sub_vote_k > 1:
+                yesno_retries = int(os.environ.get("LLM_YESNO_MAX_RETRIES", "4"))
+                max_sub_calls = max(
+                    32, sub_vote_k * len(YESNO_QUESTIONS) * yesno_retries
+                )
         include_cost_hint = False
 
         for root_model, sub_model in combos:
@@ -963,6 +952,15 @@ Rules:
         "NOT roadside assistance only; stalled on highway; tow truck dispatched; "
         "pre-auth PA-8842 on file; not out of network",
     ]
+    note_variants_hard = [
+        "NOT roadside assistance only; vehicle immobile; tow truck dispatched; "
+        "not out-of-network; no approval code on file",
+        "NOT roadside assistance only; tow truck dispatched; vehicle was NOT immobile and could be moved; "
+        "pre-auth PA-2222; not out-of-network",
+        "Out of network; tow truck dispatched; vehicle immobile; pre-auth PA-1111; "
+        "NOT roadside assistance only",
+        "Roadside assistance only; jump start only; no tow; pre-auth PA-3333; not out-of-network",
+    ]
 
     query_variants = [
         "Use the REPL to parse the policy and CSV. "
@@ -986,6 +984,16 @@ Rules:
         "out-of-network, roadside-only). Use ONLY those five answers plus the policy/CSV to compute eligibility "
         "and payout. Do not guess or parse the note yourself. Return EXACTLY: eligible=<true|false>, payout=<int>.",
     ]
+    sub_lm_query_variants_mitigate = [
+        "You MUST use the REPL and call llm_query_yesno for each of these five questions: "
+        "emergency towing, pre-auth present, immobile, out-of-network, roadside-only. "
+        "To mitigate noise, query each question multiple times and majority-vote the yes/no result. "
+        "Do NOT infer the flags yourself; treat the aggregated llm_query_yesno answers as authoritative. "
+        "Then compute eligibility and payout. Return EXACTLY: eligible=<true|false>, payout=<int>.",
+        "Use the REPL. For each of the five note questions, ask llm_query_yesno multiple times and "
+        "take a majority vote. Use ONLY those aggregated answers plus the policy/CSV to compute eligibility "
+        "and payout. Do not guess or parse the note yourself. Return EXACTLY: eligible=<true|false>, payout=<int>.",
+    ]
     sub_lm_query_variants_hidden = [
         "You MUST use the REPL and call note_yesno separately for each yes/no question about the note: "
         "(1) does it imply emergency towing? (2) is a pre-authorization present? "
@@ -998,6 +1006,15 @@ Rules:
         "out-of-network, roadside-only). Use ONLY those five answers plus the policy/CSV to compute eligibility "
         "and payout. Do not guess or parse the note yourself. Return EXACTLY: eligible=<true|false>, payout=<int>.",
     ]
+    sub_lm_query_variants_hidden_mitigate = [
+        "You MUST use the REPL and call note_yesno for each of the five questions (emergency, preauth, immobile, "
+        "out-of-network, roadside-only). Ask each question multiple times and majority-vote the result. "
+        "Do NOT infer flags yourself; treat the aggregated note_yesno answers as authoritative. "
+        "Then compute eligibility and payout. Return EXACTLY: eligible=<true|false>, payout=<int>.",
+        "Use the REPL. For each of the five note questions, call note_yesno multiple times and "
+        "take a majority vote. Use ONLY those aggregated answers plus the policy/CSV to compute eligibility "
+        "and payout. Do not guess or parse the note yourself. Return EXACTLY: eligible=<true|false>, payout=<int>.",
+    ]
     root_lm_query_variants = [
         "You MUST use the REPL but you are NOT allowed to call llm_query or llm_query_yesno. "
         "Parse the note yourself (including negations), compute eligibility and payout from the policy/CSV, "
@@ -1007,11 +1024,22 @@ Rules:
         "You must parse the note yourself (handle negations) and compute eligibility/payout. "
         "Return EXACTLY: eligible=<true|false>, payout=<int>.",
     ]
+    sub_variants = sub_lm_query_variants_mitigate if sub_mitigate else sub_lm_query_variants
+    sub_hidden_variants = (
+        sub_lm_query_variants_hidden_mitigate
+        if sub_mitigate
+        else sub_lm_query_variants_hidden
+    )
 
     force_sub_lm = os.environ.get("SUBLM_LOAD_BEARING", "1") == "1"
     force_root_lm = os.environ.get("ROOTLM_LOAD_BEARING", "0") == "1"
     full_factorial = os.environ.get("FULL_FACTORIAL") == "1"
     oracle_ablations = os.environ.get("ORACLE_ABLATIONS") == "1"
+    sub_mitigate = os.environ.get("SUB_MITIGATE") == "1"
+    hard_notes = os.environ.get("HARD_NOTES") == "1"
+    sub_vote_k = int(os.environ.get("SUB_VOTE_K", "3" if sub_mitigate else "1"))
+    if sub_vote_k < 1:
+        sub_vote_k = 1
     root_strict_env = os.environ.get("ROOT_STRICT_REPL_TEMPLATE")
     if root_strict_env is None:
         root_strict_template = force_root_lm
@@ -1039,20 +1067,32 @@ Rules:
     min_sub_calls = int(os.environ.get("MIN_SUB_CALLS", "5" if force_sub_lm else "0"))
     min_sub_calls = max(0, min_sub_calls)
     max_sub_calls = 0 if force_root_lm else None
+    if not force_root_lm:
+        override = os.environ.get("MAX_SUB_CALLS")
+        if override:
+            max_sub_calls = int(override)
+        elif force_sub_lm and sub_vote_k > 1:
+            yesno_retries = int(os.environ.get("LLM_YESNO_MAX_RETRIES", "4"))
+            max_sub_calls = max(
+                32, sub_vote_k * len(YESNO_QUESTIONS) * yesno_retries
+            )
     include_cost_hint = not (force_sub_lm or force_root_lm)
     max_steps = int(os.environ.get("MAX_STEPS", "10"))
     if strict_template and not force_root_lm:
-        query = build_strict_repl_query_hidden() if hide_note_from_root else build_strict_repl_query()
+        query = build_strict_sub_repl_query(
+            hidden_note=hide_note_from_root, vote_k=sub_vote_k
+        )
     else:
         if force_root_lm:
             query = build_strict_root_repl_query() if root_strict_template else root_lm_query_variants[0]
         else:
             if force_sub_lm:
-                variants = sub_lm_query_variants_hidden if hide_note_from_root else sub_lm_query_variants
+                variants = sub_hidden_variants if hide_note_from_root else sub_variants
                 query = variants[0]
             else:
                 query = query_variants[0]
 
+    note_variants = note_variants_hard if hard_notes else note_variants
     claims_csv = make_claims_csv(note_variants[0])
     context_csv = redact_note_in_csv(claims_csv) if hide_note_from_root else claims_csv
     context = [policy, context_csv]
@@ -1076,8 +1116,8 @@ Rules:
             policy,
             note_variants,
             query_variants,
-            sub_lm_query_variants,
-            sub_lm_query_variants_hidden,
+            sub_variants,
+            sub_hidden_variants,
             root_lm_query_variants,
             weak_root_model,
             strong_root_model,
@@ -1089,6 +1129,7 @@ Rules:
             strict_template,
             root_strict_template,
             hide_note_from_root,
+            sub_vote_k,
             max_steps,
             max_attempts,
         )
@@ -1285,22 +1326,16 @@ print(answer)
                             else root_lm_query_variants[0]
                         )
                     else:
-                        if force_sub_lm:
-                            variants = (
-                                sub_lm_query_variants_hidden
-                                if hide_note_from_root
-                                else sub_lm_query_variants
-                            )
-                            trial_query = variants[0]
-                        else:
-                            trial_query = query_variants[0]
+                    if force_sub_lm:
+                        variants = sub_hidden_variants if hide_note_from_root else sub_variants
+                        trial_query = variants[0]
+                    else:
+                        trial_query = query_variants[0]
             else:
                 note_text = rng.choice(note_variants)
                 if strict_template and not force_root_lm:
-                    trial_query = (
-                        build_strict_repl_query_hidden()
-                        if hide_note_from_root
-                        else build_strict_repl_query()
+                    trial_query = build_strict_sub_repl_query(
+                        hidden_note=hide_note_from_root, vote_k=sub_vote_k
                     )
                 else:
                     if force_root_lm:
@@ -1311,11 +1346,7 @@ print(answer)
                         )
                     else:
                         if force_sub_lm:
-                            variants = (
-                                sub_lm_query_variants_hidden
-                                if hide_note_from_root
-                                else sub_lm_query_variants
-                            )
+                            variants = sub_hidden_variants if hide_note_from_root else sub_variants
                             trial_query = rng.choice(variants)
                         else:
                             trial_query = rng.choice(query_variants)
@@ -1387,9 +1418,10 @@ print(answer)
                 strict_template,
                 root_strict_template,
                 hide_note_from_root,
+                sub_vote_k,
                 query_variants,
-                sub_lm_query_variants,
-                sub_lm_query_variants_hidden,
+                sub_variants,
+                sub_hidden_variants,
                 root_lm_query_variants,
             )
             run_oracle_ablations(
