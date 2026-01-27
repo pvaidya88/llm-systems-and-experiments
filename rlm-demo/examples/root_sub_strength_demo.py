@@ -2,6 +2,7 @@ import csv
 import os
 import random
 import re
+import unicodedata
 from datetime import date
 
 from rlm_demo import LLMClient, OpenAIResponsesClient, RLM, RLMOptions
@@ -37,10 +38,14 @@ def supports_reasoning_model(model_name):
     return name.startswith("gpt-5") or name.startswith("o")
 
 
+def strip_invisible(text):
+    return "".join(ch for ch in text if not unicodedata.category(ch).startswith("C"))
+
+
 def normalize_answer(text):
     if text is None:
         return None
-    cleaned = text.strip()
+    cleaned = strip_invisible(text.strip())
     match = OUTPUT_PATTERN.fullmatch(cleaned)
     if not match:
         return None
@@ -268,6 +273,8 @@ def run_live_case(label, root_model, sub_model, query, context, expected, max_at
         last_incorrect = False
 
     print(f"{label} invalid output: {last_answer}")
+    if os.environ.get("LOG_INVALID_REPR") == "1":
+        print(f"{label} invalid repr: {last_answer!r}")
     return f"<invalid: {last_answer}>"
 
 
