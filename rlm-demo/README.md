@@ -1,6 +1,6 @@
 # RLM Demo
 
-Minimal, dependency-light implementation of Recursive Language Models (RLMs) inspired by the paper.
+Minimal, dependency-light implementation of Recursive Language Models (RLMs) inspired by the [paper](https://arxiv.org/abs/2512.24601).
 The RLM treats long context as an external resource accessed through a Python REPL instead of stuffing
 it into the prompt.
 
@@ -70,28 +70,28 @@ python -m examples.root_sub_strength_demo
 ```
 
 Sub load bearing full factorial:
-- root gpt-4.1-nano / sub gpt-4.1-nano pass rate 5/10 (50 percent)
-- root gpt-4.1-nano / sub gpt-5.2 pass rate 9/10 (90 percent)
-- root gpt-5.2 / sub gpt-4.1-nano pass rate 5/10 (50 percent)
-- root gpt-5.2 / sub gpt-5.2 pass rate 9/10 (90 percent)
+- root gpt-4.1-nano / sub gpt-4.1-nano pass rate 5/10 (50%)
+- root gpt-4.1-nano / sub gpt-5.2 pass rate 9/10 (90%)
+- root gpt-5.2 / sub gpt-4.1-nano pass rate 5/10 (50%)
+- root gpt-5.2 / sub gpt-5.2 pass rate 9/10 (90%)
 
 Oracle ablations in sub load bearing:
-- oracle_sub root gpt-4.1-nano pass rate 10/10 (100 percent)
-- oracle_sub root gpt-5.2 pass rate 10/10 (100 percent)
-- oracle_root sub gpt-4.1-nano pass rate 0/10 (0 percent)
-- oracle_root sub gpt-5.2 pass rate 10/10 (100 percent)
+- oracle_sub root gpt-4.1-nano pass rate 10/10 (100%)
+- oracle_sub root gpt-5.2 pass rate 10/10 (100%)
+- oracle_root sub gpt-4.1-nano pass rate 0/10 (0%)
+- oracle_root sub gpt-5.2 pass rate 10/10 (100%)
 
 Root load bearing full factorial:
-- root gpt-4.1-nano / sub gpt-4.1-nano pass rate 10/10 (100 percent)
-- root gpt-4.1-nano / sub gpt-5.2 pass rate 10/10 (100 percent)
-- root gpt-5.2 / sub gpt-4.1-nano pass rate 10/10 (100 percent)
-- root gpt-5.2 / sub gpt-5.2 pass rate 10/10 (100 percent)
+- root gpt-4.1-nano / sub gpt-4.1-nano pass rate 10/10 (100%)
+- root gpt-4.1-nano / sub gpt-5.2 pass rate 10/10 (100%)
+- root gpt-5.2 / sub gpt-4.1-nano pass rate 10/10 (100%)
+- root gpt-5.2 / sub gpt-5.2 pass rate 10/10 (100%)
 
 Oracle ablations in root load bearing:
-- oracle_sub root gpt-4.1-nano pass rate 10/10 (100 percent)
-- oracle_sub root gpt-5.2 pass rate 10/10 (100 percent)
-- oracle_root sub gpt-4.1-nano pass rate 2/10 (20 percent)
-- oracle_root sub gpt-5.2 pass rate 10/10 (100 percent)
+- oracle_sub root gpt-4.1-nano pass rate 10/10 (100%)
+- oracle_sub root gpt-5.2 pass rate 10/10 (100%)
+- oracle_root sub gpt-4.1-nano pass rate 2/10 (20%)
+- oracle_root sub gpt-5.2 pass rate 10/10 (100%)
 
 ## Demos
 
