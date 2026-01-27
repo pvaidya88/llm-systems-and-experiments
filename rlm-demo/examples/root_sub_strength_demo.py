@@ -1317,7 +1317,9 @@ print(answer)
             if fixed_trials:
                 note_text = note_variants[0]
                 if strict_template and not force_root_lm:
-                    trial_query = build_strict_repl_query()
+                    trial_query = build_strict_sub_repl_query(
+                        hidden_note=hide_note_from_root, vote_k=sub_vote_k
+                    )
                 else:
                     if force_root_lm:
                         trial_query = (
@@ -1326,11 +1328,11 @@ print(answer)
                             else root_lm_query_variants[0]
                         )
                     else:
-                    if force_sub_lm:
-                        variants = sub_hidden_variants if hide_note_from_root else sub_variants
-                        trial_query = variants[0]
-                    else:
-                        trial_query = query_variants[0]
+                        if force_sub_lm:
+                            variants = sub_hidden_variants if hide_note_from_root else sub_variants
+                            trial_query = variants[0]
+                        else:
+                            trial_query = query_variants[0]
             else:
                 note_text = rng.choice(note_variants)
                 if strict_template and not force_root_lm:
