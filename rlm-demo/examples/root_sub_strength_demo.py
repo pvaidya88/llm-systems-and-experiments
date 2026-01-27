@@ -112,6 +112,101 @@ answer = f"eligible={str(eligible).lower()}, payout={payout}"
     )
 
 
+def build_strict_root_repl_query():
+    repl_block = """```repl
+import csv
+import re
+from datetime import date
+
+policy, claims_csv = context
+reader = csv.DictReader([line for line in claims_csv.splitlines() if line.strip()])
+rows = list(reader)
+row = [r for r in rows if r["id"] == "C100"][0]
+amount = int(row["amount"])
+service_date = date.fromisoformat(row["service_date"])
+filed_date = date.fromisoformat(row["filed_date"])
+note = row["note"]
+
+note_lower = note.lower()
+
+def affirmed(pattern):
+    for match in re.finditer(pattern, note_lower):
+        prefix = note_lower[: match.start()]
+        tokens = re.findall(r"\\b\\w+\\b", prefix)
+        last_tokens = tokens[-3:]
+        if any(
+            token in ("no", "not", "never", "without", "denies", "denied", "declines", "declined")
+            for token in last_tokens
+        ):
+            continue
+        return True
+    return False
+
+emergency = (
+    affirmed(r"\\bemergency towing\\b")
+    or affirmed(r"\\btow(?:ed|ing)?\\b")
+    or affirmed(r"\\btow truck\\b")
+    or affirmed(r"\\bflatbed\\b")
+    or affirmed(r"\\bwrecker\\b")
+    or affirmed(r"\\bwinch(?:ed|ing)?\\b")
+    or affirmed(r"\\brecovery vehicle\\b")
+    or affirmed(r"\\bvehicle recovery\\b")
+    or affirmed(r"\\bpulled from ditch\\b")
+)
+immobile = (
+    affirmed(r"\\bimmobile\\b")
+    or affirmed(r"\\bwould not start\\b")
+    or affirmed(r"\\bunable to move\\b")
+    or affirmed(r"\\bdisabled vehicle\\b")
+    or affirmed(r"\\bstalled on highway\\b")
+    or affirmed(r"\\bcannot move\\b")
+)
+roadside_only = (
+    affirmed(r"\\broadside assistance only\\b")
+    or affirmed(r"\\broadside only\\b")
+    or affirmed(r"\\bjump start only\\b")
+    or affirmed(r"\\btire change only\\b")
+    or affirmed(r"\\blockout only\\b")
+)
+out_of_network = (
+    affirmed(r"\\bout of network\\b")
+    or affirmed(r"\\bout-of-network\\b")
+    or affirmed(r"\\boon\\b")
+    or affirmed(r"\\bnon[- ]network\\b")
+)
+
+preauth = bool(re.search(r"\\bpa-\\d{3,}\\b", note_lower))
+preauth = preauth or "preauth" in note_lower or "pre-auth" in note_lower
+preauth = preauth or "pre authorization" in note_lower or "pre-authorization" in note_lower
+
+timely = (filed_date - service_date).days <= 30
+
+if out_of_network or roadside_only or not timely:
+    eligible = False
+elif row["plan"] == "Gold":
+    eligible = True
+elif row["plan"] == "Silver":
+    eligible = emergency and preauth and immobile
+elif row["plan"] == "Bronze":
+    eligible = emergency and immobile and amount <= 1200
+else:
+    eligible = False
+
+payout = 0
+if eligible:
+    deductibles = {"Gold": 100, "Silver": 200, "Bronze": 300}
+    caps = {"Gold": 3000, "Silver": 1500, "Bronze": 800}
+    payout = min(max(amount - deductibles.get(row["plan"], 0), 0), caps.get(row["plan"], amount))
+
+answer = f"eligible={str(eligible).lower()}, payout={payout}"
+```"""
+    return (
+        "In your next reply, output EXACTLY the following REPL block, unchanged, "
+        "then on a new line output FINAL_VAR(answer). Do not add any other text.\n\n"
+        + repl_block
+    )
+
+
 def _has_affirmed(note_lower, pattern):
     for match in re.finditer(pattern, note_lower):
         prefix = note_lower[: match.start()]
@@ -250,19 +345,23 @@ def run_case(
     min_sub_calls=0,
     include_cost_hint=True,
     max_steps=10,
+    max_sub_calls=None,
 ):
     log_repl = os.environ.get("LOG_REPL_OUTPUTS") == "1"
+    options = RLMOptions(
+        require_repl=True,
+        retry_on_invalid=True,
+        log_repl_outputs=log_repl,
+        max_steps=max_steps,
+        min_sub_calls=min_sub_calls,
+        include_cost_hint=include_cost_hint,
+    )
+    if max_sub_calls is not None:
+        options.max_sub_calls = max_sub_calls
     rlm = RLM(
         root_llm=ScriptedLLM(root_replies),
         sub_llm=StaticLLM(sub_reply),
-        options=RLMOptions(
-            require_repl=True,
-            retry_on_invalid=True,
-            log_repl_outputs=log_repl,
-            max_steps=max_steps,
-            min_sub_calls=min_sub_calls,
-            include_cost_hint=include_cost_hint,
-        ),
+        options=options,
     )
     answer = rlm.answer(query, context)
     normalized = normalize_answer(answer) or answer
@@ -282,6 +381,7 @@ def run_live_case(
     min_sub_calls=0,
     include_cost_hint=True,
     max_steps=10,
+    max_sub_calls=None,
 ):
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -319,17 +419,20 @@ def run_live_case(
         text_verbosity=normalize_text_verbosity(sub_model, text_verbosity),
     )
     log_repl = os.environ.get("LOG_REPL_OUTPUTS") == "1"
+    options = RLMOptions(
+        require_repl=True,
+        retry_on_invalid=True,
+        log_repl_outputs=log_repl,
+        max_steps=max_steps,
+        min_sub_calls=min_sub_calls,
+        include_cost_hint=include_cost_hint,
+    )
+    if max_sub_calls is not None:
+        options.max_sub_calls = max_sub_calls
     rlm = RLM(
         root_llm=root_client,
         sub_llm=sub_client,
-        options=RLMOptions(
-            require_repl=True,
-            retry_on_invalid=True,
-            log_repl_outputs=log_repl,
-            max_steps=max_steps,
-            min_sub_calls=min_sub_calls,
-            include_cost_hint=include_cost_hint,
-        ),
+        options=options,
     )
 
     last_error = None
@@ -431,6 +534,11 @@ Rules:
     context = [policy, claims_csv]
     force_sub_lm = os.environ.get("SUBLM_LOAD_BEARING", "1") == "1"
     force_root_lm = os.environ.get("ROOTLM_LOAD_BEARING", "0") == "1"
+    root_strict_env = os.environ.get("ROOT_STRICT_REPL_TEMPLATE")
+    if root_strict_env is None:
+        root_strict_template = force_root_lm
+    else:
+        root_strict_template = root_strict_env == "1"
     if force_sub_lm and force_root_lm:
         raise RuntimeError("Set only one of SUBLM_LOAD_BEARING or ROOTLM_LOAD_BEARING.")
     fixed_trials_env = os.environ.get("FIXED_TRIALS")
@@ -445,13 +553,14 @@ Rules:
         strict_template = strict_template_env == "1"
     min_sub_calls = int(os.environ.get("MIN_SUB_CALLS", "5" if force_sub_lm else "0"))
     min_sub_calls = max(0, min_sub_calls)
+    max_sub_calls = 0 if force_root_lm else None
     include_cost_hint = not (force_sub_lm or force_root_lm)
     max_steps = int(os.environ.get("MAX_STEPS", "10"))
     if strict_template and not force_root_lm:
         query = build_strict_repl_query()
     else:
         if force_root_lm:
-            query = root_lm_query_variants[0]
+            query = build_strict_root_repl_query() if root_strict_template else root_lm_query_variants[0]
         else:
             query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
 
@@ -604,6 +713,7 @@ print(answer)
             min_sub_calls=0,
             include_cost_hint=include_cost_hint,
             max_steps=max_steps,
+            max_sub_calls=max_sub_calls,
         )
         strong_answer = run_case(
             strong_label,
@@ -614,6 +724,7 @@ print(answer)
             min_sub_calls=0,
             include_cost_hint=include_cost_hint,
             max_steps=max_steps,
+            max_sub_calls=max_sub_calls,
         )
     else:
         num_trials = int(os.environ.get("NUM_TRIALS", "1"))
@@ -641,7 +752,11 @@ print(answer)
                     trial_query = build_strict_repl_query()
                 else:
                     if force_root_lm:
-                        trial_query = root_lm_query_variants[0]
+                        trial_query = (
+                            build_strict_root_repl_query()
+                            if root_strict_template
+                            else root_lm_query_variants[0]
+                        )
                     else:
                         trial_query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
             else:
@@ -650,7 +765,11 @@ print(answer)
                     trial_query = build_strict_repl_query()
                 else:
                     if force_root_lm:
-                        trial_query = rng.choice(root_lm_query_variants)
+                        trial_query = (
+                            build_strict_root_repl_query()
+                            if root_strict_template
+                            else rng.choice(root_lm_query_variants)
+                        )
                     else:
                         trial_query = rng.choice(sub_lm_query_variants if force_sub_lm else query_variants)
             claims_csv = make_claims_csv(note_text)
@@ -673,6 +792,7 @@ print(answer)
                 min_sub_calls=min_sub_calls,
                 include_cost_hint=include_cost_hint,
                 max_steps=max_steps,
+                max_sub_calls=max_sub_calls,
             )
             strong_answer = run_live_case(
                 strong_label,
@@ -685,6 +805,7 @@ print(answer)
                 min_sub_calls=min_sub_calls,
                 include_cost_hint=include_cost_hint,
                 max_steps=max_steps,
+                max_sub_calls=max_sub_calls,
             )
 
             weak_counts[classify_outcome(weak_answer, expected)] += 1
