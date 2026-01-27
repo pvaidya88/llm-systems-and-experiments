@@ -1,17 +1,53 @@
 import io
+import os
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 
 class ReplEnvironment:
     def __init__(self, context: Any, llm_query: Callable, max_output_chars: int = 4000):
         self._max_output_chars = max_output_chars
+        self._llm_query = llm_query
+        self._yesno_max_retries = max(
+            1, int(os.environ.get("LLM_YESNO_MAX_RETRIES", "4"))
+        )
         self._globals: Dict[str, Any] = {
             "context": context,
             "llm_query": llm_query,
+            "llm_query_yesno": self._llm_query_yesno,
         }
         self._locals: Dict[str, Any] = {}
+
+    def _llm_query_yesno(
+        self, prompt: str, system: Optional[str] = None, max_retries: Optional[int] = None
+    ) -> str:
+        retries = max(1, max_retries or self._yesno_max_retries)
+        last_response = ""
+        for attempt in range(retries):
+            if attempt == 0:
+                response = self._llm_query(prompt, system=system)
+            else:
+                response = self._llm_query(
+                    f"Answer yes or no only. {prompt}",
+                    system="Answer yes or no only.",
+                )
+            last_response = response or ""
+            normalized = self._normalize_yesno(last_response)
+            if normalized is not None:
+                return normalized
+        raise RuntimeError(f"llm_query_yesno failed after {retries} retries: {last_response!r}")
+
+    @staticmethod
+    def _normalize_yesno(text: str) -> Optional[str]:
+        if text is None:
+            return None
+        cleaned = text.strip().lower()
+        if cleaned.startswith("y"):
+            return "yes"
+        if cleaned.startswith("n"):
+            return "no"
+        return None
 
     def exec(self, code: str) -> str:
         stdout = io.StringIO()

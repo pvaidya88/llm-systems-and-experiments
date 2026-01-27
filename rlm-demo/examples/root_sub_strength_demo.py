@@ -192,7 +192,17 @@ def format_model_pair_label(root_model, sub_model):
     return f"root={root_model} / sub={sub_model}"
 
 
-def run_case(label, root_replies, sub_reply, query, context, *, min_sub_calls=0, include_cost_hint=True):
+def run_case(
+    label,
+    root_replies,
+    sub_reply,
+    query,
+    context,
+    *,
+    min_sub_calls=0,
+    include_cost_hint=True,
+    max_steps=10,
+):
     log_repl = os.environ.get("LOG_REPL_OUTPUTS") == "1"
     rlm = RLM(
         root_llm=ScriptedLLM(root_replies),
@@ -201,7 +211,7 @@ def run_case(label, root_replies, sub_reply, query, context, *, min_sub_calls=0,
             require_repl=True,
             retry_on_invalid=True,
             log_repl_outputs=log_repl,
-            max_steps=10,
+            max_steps=max_steps,
             min_sub_calls=min_sub_calls,
             include_cost_hint=include_cost_hint,
         ),
@@ -223,6 +233,7 @@ def run_live_case(
     *,
     min_sub_calls=0,
     include_cost_hint=True,
+    max_steps=10,
 ):
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -259,7 +270,7 @@ def run_live_case(
             require_repl=True,
             retry_on_invalid=True,
             log_repl_outputs=log_repl,
-            max_steps=10,
+            max_steps=max_steps,
             min_sub_calls=min_sub_calls,
             include_cost_hint=include_cost_hint,
         ),
@@ -339,14 +350,14 @@ Rules:
         "Return EXACTLY: eligible=<true|false>, payout=<int>.",
     ]
     sub_lm_query_variants = [
-        "You MUST use the REPL and call llm_query separately for each yes/no question about the note: "
+        "You MUST use the REPL and call llm_query_yesno separately for each yes/no question about the note: "
         "(1) does it imply emergency towing? (2) is a pre-authorization present? "
         "(3) was the vehicle immobile? (4) is it out-of-network? (5) is it roadside assistance only? "
         "Ask each question separately and accept only yes/no. Do NOT infer these flags yourself; "
-        "treat llm_query answers as authoritative. Then compute eligibility and payout from the policy/CSV. "
-        "If you do not call llm_query at least 5 times, your answer will be treated as invalid. "
+        "treat llm_query_yesno answers as authoritative. Then compute eligibility and payout from the policy/CSV. "
+        "If you do not call llm_query_yesno at least 5 times, your answer will be treated as invalid. "
         "Return EXACTLY: eligible=<true|false>, payout=<int>.",
-        "Use the REPL. For the note, call llm_query five times (emergency towing, preauth present, immobile, "
+        "Use the REPL. For the note, call llm_query_yesno five times (emergency towing, preauth present, immobile, "
         "out-of-network, roadside-only). Use ONLY those five answers plus the policy/CSV to compute eligibility "
         "and payout. Do not guess or parse the note yourself. Return EXACTLY: eligible=<true|false>, payout=<int>.",
     ]
@@ -357,6 +368,7 @@ Rules:
     min_sub_calls = int(os.environ.get("MIN_SUB_CALLS", "5" if force_sub_lm else "0"))
     min_sub_calls = max(0, min_sub_calls)
     include_cost_hint = not force_sub_lm
+    max_steps = int(os.environ.get("MAX_STEPS", "10"))
     query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
 
     rows = parse_csv_rows(claims_csv)
@@ -507,6 +519,7 @@ print(answer)
             context,
             min_sub_calls=0,
             include_cost_hint=include_cost_hint,
+            max_steps=max_steps,
         )
         strong_answer = run_case(
             strong_label,
@@ -516,6 +529,7 @@ print(answer)
             context,
             min_sub_calls=0,
             include_cost_hint=include_cost_hint,
+            max_steps=max_steps,
         )
     else:
         num_trials = int(os.environ.get("NUM_TRIALS", "1"))
@@ -558,6 +572,7 @@ print(answer)
                 weak_attempts,
                 min_sub_calls=min_sub_calls,
                 include_cost_hint=include_cost_hint,
+                max_steps=max_steps,
             )
             strong_answer = run_live_case(
                 strong_label,
@@ -569,6 +584,7 @@ print(answer)
                 strong_attempts,
                 min_sub_calls=min_sub_calls,
                 include_cost_hint=include_cost_hint,
+                max_steps=max_steps,
             )
 
             weak_counts[classify_outcome(weak_answer, expected)] += 1
