@@ -20,6 +20,7 @@ class RLMOptions:
     require_repl: bool = False
     retry_on_invalid: bool = False
     log_repl_outputs: bool = False
+    min_sub_calls: int = 0
 
 
 class RLM:
@@ -93,6 +94,18 @@ class RLM:
                                 "You must use the REPL before answering. "
                                 "Run at least one ```repl``` block to inspect context, "
                                 "then respond with FINAL(...)."
+                            ),
+                        }
+                    )
+                    continue
+                if self._options.min_sub_calls and subcall_state["count"] < self._options.min_sub_calls:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"You must call llm_query at least {self._options.min_sub_calls} times "
+                                f"before answering. Current count: {subcall_state['count']}. "
+                                "Run a ```repl``` block that calls llm_query, then respond with FINAL(...)."
                             ),
                         }
                     )

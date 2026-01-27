@@ -192,7 +192,7 @@ def format_model_pair_label(root_model, sub_model):
     return f"root={root_model} / sub={sub_model}"
 
 
-def run_case(label, root_replies, sub_reply, query, context):
+def run_case(label, root_replies, sub_reply, query, context, *, min_sub_calls=0, include_cost_hint=True):
     log_repl = os.environ.get("LOG_REPL_OUTPUTS") == "1"
     rlm = RLM(
         root_llm=ScriptedLLM(root_replies),
@@ -202,6 +202,8 @@ def run_case(label, root_replies, sub_reply, query, context):
             retry_on_invalid=True,
             log_repl_outputs=log_repl,
             max_steps=10,
+            min_sub_calls=min_sub_calls,
+            include_cost_hint=include_cost_hint,
         ),
     )
     answer = rlm.answer(query, context)
@@ -210,7 +212,18 @@ def run_case(label, root_replies, sub_reply, query, context):
     return normalized
 
 
-def run_live_case(label, root_model, sub_model, query, context, expected, max_attempts):
+def run_live_case(
+    label,
+    root_model,
+    sub_model,
+    query,
+    context,
+    expected,
+    max_attempts,
+    *,
+    min_sub_calls=0,
+    include_cost_hint=True,
+):
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("Set OPENAI_API_KEY to run live model experiments.")
@@ -247,6 +260,8 @@ def run_live_case(label, root_model, sub_model, query, context, expected, max_at
             retry_on_invalid=True,
             log_repl_outputs=log_repl,
             max_steps=10,
+            min_sub_calls=min_sub_calls,
+            include_cost_hint=include_cost_hint,
         ),
     )
 
@@ -323,10 +338,26 @@ Rules:
         "Watch for negations (e.g., NOT roadside assistance only, not out-of-network). "
         "Return EXACTLY: eligible=<true|false>, payout=<int>.",
     ]
+    sub_lm_query_variants = [
+        "You MUST use the REPL and call llm_query separately for each yes/no question about the note: "
+        "(1) does it imply emergency towing? (2) is a pre-authorization present? "
+        "(3) was the vehicle immobile? (4) is it out-of-network? (5) is it roadside assistance only? "
+        "Ask each question separately and accept only yes/no. Do NOT infer these flags yourself; "
+        "treat llm_query answers as authoritative. Then compute eligibility and payout from the policy/CSV. "
+        "If you do not call llm_query at least 5 times, your answer will be treated as invalid. "
+        "Return EXACTLY: eligible=<true|false>, payout=<int>.",
+        "Use the REPL. For the note, call llm_query five times (emergency towing, preauth present, immobile, "
+        "out-of-network, roadside-only). Use ONLY those five answers plus the policy/CSV to compute eligibility "
+        "and payout. Do not guess or parse the note yourself. Return EXACTLY: eligible=<true|false>, payout=<int>.",
+    ]
 
     claims_csv = make_claims_csv(note_variants[0])
     context = [policy, claims_csv]
-    query = query_variants[0]
+    force_sub_lm = os.environ.get("SUBLM_LOAD_BEARING", "1") == "1"
+    min_sub_calls = int(os.environ.get("MIN_SUB_CALLS", "5" if force_sub_lm else "0"))
+    min_sub_calls = max(0, min_sub_calls)
+    include_cost_hint = not force_sub_lm
+    query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
 
     rows = parse_csv_rows(claims_csv)
     target = next(row for row in rows if row["id"] == "C100")
@@ -468,8 +499,24 @@ print(answer)
 
         weak_label = "Scripted weak root/sub"
         strong_label = "Scripted strong root/sub"
-        weak_answer = run_case(weak_label, weak_root, weak_sub, query, context)
-        strong_answer = run_case(strong_label, strong_root, strong_sub, query, context)
+        weak_answer = run_case(
+            weak_label,
+            weak_root,
+            weak_sub,
+            query,
+            context,
+            min_sub_calls=0,
+            include_cost_hint=include_cost_hint,
+        )
+        strong_answer = run_case(
+            strong_label,
+            strong_root,
+            strong_sub,
+            query,
+            context,
+            min_sub_calls=0,
+            include_cost_hint=include_cost_hint,
+        )
     else:
         num_trials = int(os.environ.get("NUM_TRIALS", "1"))
         seed = os.environ.get("RANDOM_SEED")
@@ -491,7 +538,7 @@ print(answer)
 
         for idx in range(num_trials):
             note_text = rng.choice(note_variants)
-            trial_query = rng.choice(query_variants)
+            trial_query = rng.choice(sub_lm_query_variants if force_sub_lm else query_variants)
             claims_csv = make_claims_csv(note_text)
             context = [policy, claims_csv]
             rows = parse_csv_rows(claims_csv)
@@ -509,6 +556,8 @@ print(answer)
                 context,
                 expected,
                 weak_attempts,
+                min_sub_calls=min_sub_calls,
+                include_cost_hint=include_cost_hint,
             )
             strong_answer = run_live_case(
                 strong_label,
@@ -518,6 +567,8 @@ print(answer)
                 context,
                 expected,
                 strong_attempts,
+                min_sub_calls=min_sub_calls,
+                include_cost_hint=include_cost_hint,
             )
 
             weak_counts[classify_outcome(weak_answer, expected)] += 1
