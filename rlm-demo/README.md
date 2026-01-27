@@ -85,6 +85,7 @@ $env:VERBOSE_TRIALS = "1"
 Note: `reasoning.effort` is only applied to reasoning-capable models (gpt-5 / o-series).
 Some weaker models may violate the REPL protocol (e.g., missing variables); the demo will report the error
 and continue so you can still see the strong-model result.
+Note: `gpt-4.1-nano` only supports `OPENAI_TEXT_VERBOSITY=medium`; the demo will force `medium` for that model.
 
 To run the scripted (deterministic) version instead of live models:
 

@@ -296,19 +296,27 @@ def run_live_case(
     root_effort = normalize_effort(os.environ.get("ROOT_MODEL_EFFORT"))
     sub_effort = normalize_effort(os.environ.get("SUB_MODEL_EFFORT"))
 
+    def normalize_text_verbosity(model_name, value):
+        if not value:
+            return None
+        name = (model_name or "").strip().lower()
+        if name.startswith("gpt-4.1-nano"):
+            return "medium"
+        return value
+
     root_client = OpenAIResponsesClient(
         api_key=api_key,
         base_url=base_url,
         model=root_model,
         reasoning_effort=root_effort if supports_reasoning_model(root_model) else None,
-        text_verbosity=text_verbosity,
+        text_verbosity=normalize_text_verbosity(root_model, text_verbosity),
     )
     sub_client = OpenAIResponsesClient(
         api_key=api_key,
         base_url=base_url,
         model=sub_model,
         reasoning_effort=sub_effort if supports_reasoning_model(sub_model) else None,
-        text_verbosity=text_verbosity,
+        text_verbosity=normalize_text_verbosity(sub_model, text_verbosity),
     )
     log_repl = os.environ.get("LOG_REPL_OUTPUTS") == "1"
     rlm = RLM(
