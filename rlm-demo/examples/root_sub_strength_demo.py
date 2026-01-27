@@ -1024,12 +1024,6 @@ Rules:
         "You must parse the note yourself (handle negations) and compute eligibility/payout. "
         "Return EXACTLY: eligible=<true|false>, payout=<int>.",
     ]
-    sub_variants = sub_lm_query_variants_mitigate if sub_mitigate else sub_lm_query_variants
-    sub_hidden_variants = (
-        sub_lm_query_variants_hidden_mitigate
-        if sub_mitigate
-        else sub_lm_query_variants_hidden
-    )
 
     force_sub_lm = os.environ.get("SUBLM_LOAD_BEARING", "1") == "1"
     force_root_lm = os.environ.get("ROOTLM_LOAD_BEARING", "0") == "1"
@@ -1040,6 +1034,13 @@ Rules:
     sub_vote_k = int(os.environ.get("SUB_VOTE_K", "3" if sub_mitigate else "1"))
     if sub_vote_k < 1:
         sub_vote_k = 1
+
+    sub_variants = sub_lm_query_variants_mitigate if sub_mitigate else sub_lm_query_variants
+    sub_hidden_variants = (
+        sub_lm_query_variants_hidden_mitigate
+        if sub_mitigate
+        else sub_lm_query_variants_hidden
+    )
     root_strict_env = os.environ.get("ROOT_STRICT_REPL_TEMPLATE")
     if root_strict_env is None:
         root_strict_template = force_root_lm
