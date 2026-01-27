@@ -21,6 +21,7 @@ class RLMOptions:
     retry_on_invalid: bool = False
     log_repl_outputs: bool = False
     min_sub_calls: int = 0
+    hidden_note: Optional[str] = None
 
 
 class RLM:
@@ -59,6 +60,7 @@ class RLM:
             context=context,
             llm_query=llm_query,
             max_output_chars=self._options.max_output_chars,
+            hidden_note=self._options.hidden_note,
         )
 
         messages = [

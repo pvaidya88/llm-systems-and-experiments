@@ -13,7 +13,8 @@ The REPL provides:
 1) context: the full context (a string or list of strings)
 2) llm_query(prompt, system=None): optional sub-call to another LLM for heavy text processing
 3) llm_query_yesno(prompt, system=None, max_retries=None): sub-call that retries and returns "yes" or "no"
-4) print(...) output will be returned to you (truncated if long)
+4) note_yesno(question): when available, asks about a hidden note and returns "yes" or "no"
+5) print(...) output will be returned to you (truncated if long)
 
 Use the REPL to inspect context. When you want to execute code, wrap it in a fenced block:
 ```repl

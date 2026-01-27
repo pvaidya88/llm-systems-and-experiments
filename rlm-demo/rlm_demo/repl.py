@@ -6,9 +6,16 @@ from typing import Any, Callable, Dict, Optional
 
 
 class ReplEnvironment:
-    def __init__(self, context: Any, llm_query: Callable, max_output_chars: int = 4000):
+    def __init__(
+        self,
+        context: Any,
+        llm_query: Callable,
+        max_output_chars: int = 4000,
+        hidden_note: Optional[str] = None,
+    ):
         self._max_output_chars = max_output_chars
         self._llm_query = llm_query
+        self._hidden_note = hidden_note
         self._yesno_max_retries = max(
             1, int(os.environ.get("LLM_YESNO_MAX_RETRIES", "4"))
         )
@@ -17,6 +24,8 @@ class ReplEnvironment:
             "llm_query": llm_query,
             "llm_query_yesno": self._llm_query_yesno,
         }
+        if hidden_note is not None:
+            self._globals["note_yesno"] = self._note_yesno
         self._locals: Dict[str, Any] = {}
 
     def _llm_query_yesno(
@@ -48,6 +57,12 @@ class ReplEnvironment:
         if cleaned.startswith("n"):
             return "no"
         return None
+
+    def _note_yesno(self, question: str) -> str:
+        if self._hidden_note is None:
+            raise RuntimeError("Hidden note is not available.")
+        prompt = f"{question} Note: {self._hidden_note}"
+        return self._llm_query_yesno(prompt, system="Answer yes or no only.")
 
     def exec(self, code: str) -> str:
         stdout = io.StringIO()

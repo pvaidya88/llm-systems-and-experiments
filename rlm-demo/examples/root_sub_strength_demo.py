@@ -1,4 +1,5 @@
 import csv
+import io
 import os
 import random
 import re
@@ -11,6 +12,14 @@ OUTPUT_PATTERN = re.compile(
     r"^eligible\s*=\s*(true|false)\s*,\s*payout\s*=\s*(\d+)\s*$",
     re.IGNORECASE,
 )
+
+YESNO_QUESTIONS = [
+    ("emergency", "Does the note imply emergency towing?"),
+    ("preauth", "Is a pre-authorization present?"),
+    ("immobile", "Was the vehicle immobile?"),
+    ("out_of_network", "Is it out-of-network?"),
+    ("roadside_only", "Is it roadside assistance only?"),
+]
 
 
 class ScriptedLLM(LLMClient):
@@ -50,6 +59,32 @@ def normalize_answer(text):
     if not match:
         return None
     return f"eligible={match.group(1).lower()}, payout={int(match.group(2))}"
+
+
+def normalize_yesno(text):
+    if text is None:
+        return None
+    cleaned = strip_invisible(text.strip()).lower()
+    if cleaned.startswith("y"):
+        return "yes"
+    if cleaned.startswith("n"):
+        return "no"
+    return None
+
+
+def redact_note_in_csv(csv_text):
+    reader = csv.DictReader([line for line in csv_text.splitlines() if line.strip()])
+    rows = []
+    for row in reader:
+        row = {key.strip(): value.strip() for key, value in row.items()}
+        if "note" in row:
+            row["note"] = "<redacted>"
+        rows.append(row)
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=reader.fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    return output.getvalue().strip()
 
 
 def build_query(base_query, attempt, last_error, incorrect=False):
@@ -111,6 +146,104 @@ answer = f"eligible={str(eligible).lower()}, payout={payout}"
         + repl_block
     )
 
+
+def build_strict_repl_query_hidden():
+    repl_block = """```repl
+import csv
+from datetime import date
+
+policy, claims_csv = context
+reader = csv.DictReader([line for line in claims_csv.splitlines() if line.strip()])
+rows = list(reader)
+row = [r for r in rows if r["id"] == "C100"][0]
+amount = int(row["amount"])
+service_date = date.fromisoformat(row["service_date"])
+filed_date = date.fromisoformat(row["filed_date"])
+
+emergency = note_yesno("Does the note imply emergency towing?") == "yes"
+preauth = note_yesno("Is a pre-authorization present?") == "yes"
+immobile = note_yesno("Was the vehicle immobile?") == "yes"
+out_of_network = note_yesno("Is it out-of-network?") == "yes"
+roadside_only = note_yesno("Is it roadside assistance only?") == "yes"
+
+timely = (filed_date - service_date).days <= 30
+
+if out_of_network or roadside_only or not timely:
+    eligible = False
+elif row["plan"] == "Gold":
+    eligible = True
+elif row["plan"] == "Silver":
+    eligible = emergency and preauth and immobile
+elif row["plan"] == "Bronze":
+    eligible = emergency and immobile and amount <= 1200
+else:
+    eligible = False
+
+payout = 0
+if eligible:
+    deductibles = {"Gold": 100, "Silver": 200, "Bronze": 300}
+    caps = {"Gold": 3000, "Silver": 1500, "Bronze": 800}
+    payout = min(max(amount - deductibles.get(row["plan"], 0), 0), caps.get(row["plan"], amount))
+
+answer = f"eligible={str(eligible).lower()}, payout={payout}"
+```"""
+    return (
+        "In your next reply, output EXACTLY the following REPL block, unchanged, "
+        "then on a new line output FINAL_VAR(answer). Do not add any other text.\n\n"
+        + repl_block
+    )
+
+
+def build_oracle_flags_query(flags):
+    emergency = "True" if flags.get("emergency") else "False"
+    preauth = "True" if flags.get("preauth") else "False"
+    immobile = "True" if flags.get("immobile") else "False"
+    out_of_network = "True" if flags.get("out_of_network") else "False"
+    roadside_only = "True" if flags.get("roadside_only") else "False"
+    repl_block = f"""```repl
+import csv
+from datetime import date
+
+policy, claims_csv = context
+reader = csv.DictReader([line for line in claims_csv.splitlines() if line.strip()])
+rows = list(reader)
+row = [r for r in rows if r["id"] == "C100"][0]
+amount = int(row["amount"])
+service_date = date.fromisoformat(row["service_date"])
+filed_date = date.fromisoformat(row["filed_date"])
+
+emergency = {emergency}
+preauth = {preauth}
+immobile = {immobile}
+out_of_network = {out_of_network}
+roadside_only = {roadside_only}
+
+timely = (filed_date - service_date).days <= 30
+
+if out_of_network or roadside_only or not timely:
+    eligible = False
+elif row["plan"] == "Gold":
+    eligible = True
+elif row["plan"] == "Silver":
+    eligible = emergency and preauth and immobile
+elif row["plan"] == "Bronze":
+    eligible = emergency and immobile and amount <= 1200
+else:
+    eligible = False
+
+payout = 0
+if eligible:
+    deductibles = {{"Gold": 100, "Silver": 200, "Bronze": 300}}
+    caps = {{"Gold": 3000, "Silver": 1500, "Bronze": 800}}
+    payout = min(max(amount - deductibles.get(row["plan"], 0), 0), caps.get(row["plan"], amount))
+
+answer = f"eligible={{str(eligible).lower()}}, payout={{payout}}"
+```"""
+    return (
+        "In your next reply, output EXACTLY the following REPL block, unchanged, "
+        "then on a new line output FINAL_VAR(answer). Do not add any other text.\n\n"
+        + repl_block
+    )
 
 def build_strict_root_repl_query():
     repl_block = """```repl
@@ -273,6 +406,49 @@ def parse_note_flags(note):
     return emergency, preauth, out_of_network, immobile, roadside_only
 
 
+def flags_to_dict(emergency, preauth, out_of_network, immobile, roadside_only):
+    return {
+        "emergency": emergency,
+        "preauth": preauth,
+        "out_of_network": out_of_network,
+        "immobile": immobile,
+        "roadside_only": roadside_only,
+    }
+
+
+def compute_expected_from_flags(row, flags):
+    plan = row["plan"]
+    amount = int(row["amount"])
+    service_date = date.fromisoformat(row["service_date"])
+    filed_date = date.fromisoformat(row["filed_date"])
+
+    emergency = bool(flags.get("emergency"))
+    preauth = bool(flags.get("preauth"))
+    out_of_network = bool(flags.get("out_of_network"))
+    immobile = bool(flags.get("immobile"))
+    roadside_only = bool(flags.get("roadside_only"))
+    timely = (filed_date - service_date).days <= 30
+
+    if out_of_network or roadside_only or not timely:
+        eligible = False
+    elif plan == "Gold":
+        eligible = True
+    elif plan == "Silver":
+        eligible = emergency and preauth and immobile
+    elif plan == "Bronze":
+        eligible = emergency and immobile and amount <= 1200
+    else:
+        eligible = False
+
+    payout = 0
+    if eligible:
+        deductibles = {"Gold": 100, "Silver": 200, "Bronze": 300}
+        caps = {"Gold": 3000, "Silver": 1500, "Bronze": 800}
+        payout = min(max(amount - deductibles.get(plan, 0), 0), caps.get(plan, amount))
+
+    return f"eligible={str(eligible).lower()}, payout={payout}"
+
+
 def compute_expected(row):
     plan = row["plan"]
     amount = int(row["amount"])
@@ -335,6 +511,60 @@ def format_model_pair_label(root_model, sub_model):
     return f"root={root_model} / sub={sub_model}"
 
 
+_CLIENT_CACHE = {}
+
+
+def normalize_text_verbosity(model_name, value):
+    if not value:
+        return None
+    name = (model_name or "").strip().lower()
+    if name.startswith("gpt-4.1-nano"):
+        return "medium"
+    return value
+
+
+def get_openai_client(model_name, effort, text_verbosity, api_key, base_url):
+    key = (model_name, effort, text_verbosity, base_url)
+    if key in _CLIENT_CACHE:
+        return _CLIENT_CACHE[key]
+    client = OpenAIResponsesClient(
+        api_key=api_key,
+        base_url=base_url,
+        model=model_name,
+        reasoning_effort=effort if supports_reasoning_model(model_name) else None,
+        text_verbosity=normalize_text_verbosity(model_name, text_verbosity),
+    )
+    _CLIENT_CACHE[key] = client
+    return client
+
+
+def ask_yesno_with_client(client, question, note, max_retries):
+    prompt = f"{question} Note: {note}"
+    last_response = ""
+    for attempt in range(max(1, max_retries)):
+        if attempt == 0:
+            response = client.complete([{"role": "user", "content": prompt}])
+        else:
+            response = client.complete(
+                [{"role": "user", "content": f"Answer yes or no only. {prompt}"}]
+            )
+        last_response = response or ""
+        normalized = normalize_yesno(last_response)
+        if normalized is not None:
+            return normalized
+    return None
+
+
+def get_sub_flags(client, note, max_retries):
+    flags = {}
+    for key, question in YESNO_QUESTIONS:
+        answer = ask_yesno_with_client(client, question, note, max_retries)
+        if answer is None:
+            return None
+        flags[key] = answer == "yes"
+    return flags
+
+
 def run_case(
     label,
     root_replies,
@@ -346,6 +576,7 @@ def run_case(
     include_cost_hint=True,
     max_steps=10,
     max_sub_calls=None,
+    hidden_note=None,
 ):
     log_repl = os.environ.get("LOG_REPL_OUTPUTS") == "1"
     options = RLMOptions(
@@ -355,6 +586,7 @@ def run_case(
         max_steps=max_steps,
         min_sub_calls=min_sub_calls,
         include_cost_hint=include_cost_hint,
+        hidden_note=hidden_note,
     )
     if max_sub_calls is not None:
         options.max_sub_calls = max_sub_calls
@@ -382,6 +614,7 @@ def run_live_case(
     include_cost_hint=True,
     max_steps=10,
     max_sub_calls=None,
+    hidden_note=None,
 ):
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -396,28 +629,10 @@ def run_live_case(
     root_effort = normalize_effort(os.environ.get("ROOT_MODEL_EFFORT"))
     sub_effort = normalize_effort(os.environ.get("SUB_MODEL_EFFORT"))
 
-    def normalize_text_verbosity(model_name, value):
-        if not value:
-            return None
-        name = (model_name or "").strip().lower()
-        if name.startswith("gpt-4.1-nano"):
-            return "medium"
-        return value
-
-    root_client = OpenAIResponsesClient(
-        api_key=api_key,
-        base_url=base_url,
-        model=root_model,
-        reasoning_effort=root_effort if supports_reasoning_model(root_model) else None,
-        text_verbosity=normalize_text_verbosity(root_model, text_verbosity),
+    root_client = get_openai_client(
+        root_model, root_effort, text_verbosity, api_key, base_url
     )
-    sub_client = OpenAIResponsesClient(
-        api_key=api_key,
-        base_url=base_url,
-        model=sub_model,
-        reasoning_effort=sub_effort if supports_reasoning_model(sub_model) else None,
-        text_verbosity=normalize_text_verbosity(sub_model, text_verbosity),
-    )
+    sub_client = get_openai_client(sub_model, sub_effort, text_verbosity, api_key, base_url)
     log_repl = os.environ.get("LOG_REPL_OUTPUTS") == "1"
     options = RLMOptions(
         require_repl=True,
@@ -426,6 +641,7 @@ def run_live_case(
         max_steps=max_steps,
         min_sub_calls=min_sub_calls,
         include_cost_hint=include_cost_hint,
+        hidden_note=hidden_note,
     )
     if max_sub_calls is not None:
         options.max_sub_calls = max_sub_calls
@@ -467,6 +683,256 @@ def run_live_case(
     if os.environ.get("LOG_INVALID_REPR") == "1":
         print(f"{label} invalid repr: {last_invalid!r}")
     return f"<invalid: {last_invalid}>"
+
+
+def select_query(
+    force_sub_lm,
+    force_root_lm,
+    strict_template,
+    root_strict_template,
+    hide_note_from_root,
+    query_variants,
+    sub_lm_query_variants,
+    sub_lm_query_variants_hidden,
+    root_lm_query_variants,
+    rng,
+    randomize,
+):
+    if strict_template and not force_root_lm:
+        return (
+            build_strict_repl_query_hidden()
+            if hide_note_from_root
+            else build_strict_repl_query()
+        )
+    if force_root_lm:
+        if root_strict_template:
+            return build_strict_root_repl_query()
+        return rng.choice(root_lm_query_variants) if randomize else root_lm_query_variants[0]
+    if force_sub_lm:
+        variants = sub_lm_query_variants_hidden if hide_note_from_root else sub_lm_query_variants
+        return rng.choice(variants) if randomize else variants[0]
+    return rng.choice(query_variants) if randomize else query_variants[0]
+
+
+def build_trial_set(
+    num_trials,
+    rng,
+    fixed_trials,
+    note_variants,
+    policy,
+    force_sub_lm,
+    force_root_lm,
+    strict_template,
+    root_strict_template,
+    hide_note_from_root,
+    query_variants,
+    sub_lm_query_variants,
+    sub_lm_query_variants_hidden,
+    root_lm_query_variants,
+):
+    trials = []
+    for idx in range(num_trials):
+        note_text = note_variants[0] if fixed_trials else rng.choice(note_variants)
+        claims_csv = make_claims_csv(note_text)
+        context_csv = redact_note_in_csv(claims_csv) if hide_note_from_root else claims_csv
+        context = [policy, context_csv]
+        rows = parse_csv_rows(claims_csv)
+        row = next(r for r in rows if r["id"] == "C100")
+        expected = compute_expected(row)
+        oracle_flags = flags_to_dict(*parse_note_flags(note_text))
+        trial_query = select_query(
+            force_sub_lm,
+            force_root_lm,
+            strict_template,
+            root_strict_template,
+            hide_note_from_root,
+            query_variants,
+            sub_lm_query_variants,
+            sub_lm_query_variants_hidden,
+            root_lm_query_variants,
+            rng,
+            randomize=not fixed_trials,
+        )
+        trials.append(
+            {
+                "index": idx + 1,
+                "note_text": note_text,
+                "context": context,
+                "expected": expected,
+                "row": row,
+                "oracle_flags": oracle_flags,
+                "query": trial_query,
+            }
+        )
+    return trials
+
+
+def summarize_counts(label, counts):
+    total = sum(counts.values())
+    rate = (counts["correct"] / total * 100) if total else 0
+    print(
+        f"{label} pass rate: {counts['correct']}/{total} ({rate:.0f}%) | "
+        f"incorrect={counts['incorrect']}, invalid={counts['invalid']}, error={counts['error']}"
+    )
+
+
+def run_oracle_ablations(
+    trials,
+    root_models,
+    sub_models,
+    api_key,
+    base_url,
+    text_verbosity,
+    root_effort,
+    sub_effort,
+    max_attempts,
+):
+    yesno_retries = int(os.environ.get("LLM_YESNO_MAX_RETRIES", "4"))
+
+    oracle_root_counts = {model: {"correct": 0, "incorrect": 0, "invalid": 0} for model in sub_models}
+    for sub_model in sub_models:
+        sub_client = get_openai_client(
+            sub_model, sub_effort, text_verbosity, api_key, base_url
+        )
+        for trial in trials:
+            flags = get_sub_flags(sub_client, trial["note_text"], yesno_retries)
+            if flags is None:
+                oracle_root_counts[sub_model]["invalid"] += 1
+                continue
+            predicted = compute_expected_from_flags(trial["row"], flags)
+            if predicted == trial["expected"]:
+                oracle_root_counts[sub_model]["correct"] += 1
+            else:
+                oracle_root_counts[sub_model]["incorrect"] += 1
+
+    oracle_sub_counts = {model: {"correct": 0, "incorrect": 0, "invalid": 0, "error": 0} for model in root_models}
+    for root_model in root_models:
+        label = f"oracle_sub root={root_model}"
+        for trial in trials:
+            oracle_query = build_oracle_flags_query(trial["oracle_flags"])
+            answer = run_live_case(
+                label,
+                root_model,
+                root_model,
+                oracle_query,
+                trial["context"],
+                trial["expected"],
+                max_attempts,
+                min_sub_calls=0,
+                include_cost_hint=False,
+                max_steps=int(os.environ.get("MAX_STEPS", "10")),
+                max_sub_calls=0,
+                hidden_note=None,
+            )
+            oracle_sub_counts[root_model][classify_outcome(answer, trial["expected"])] += 1
+
+    for sub_model, counts in oracle_root_counts.items():
+        total = sum(counts.values())
+        rate = (counts["correct"] / total * 100) if total else 0
+        print(
+            f"oracle_root sub={sub_model} pass rate: {counts['correct']}/{total} ({rate:.0f}%) | "
+            f"incorrect={counts['incorrect']}, invalid={counts['invalid']}"
+        )
+
+    for root_model, counts in oracle_sub_counts.items():
+        summarize_counts(f"oracle_sub root={root_model}", counts)
+
+
+def run_full_factorial_suite(
+    policy,
+    note_variants,
+    query_variants,
+    sub_lm_query_variants,
+    sub_lm_query_variants_hidden,
+    root_lm_query_variants,
+    weak_root_model,
+    strong_root_model,
+    weak_sub_model,
+    strong_sub_model,
+    num_trials,
+    rng,
+    fixed_trials,
+    strict_template,
+    root_strict_template,
+    hide_note_from_root,
+    max_steps,
+    max_attempts,
+):
+    regimes = [
+        ("sub_load_bearing", True, False),
+        ("root_load_bearing", False, True),
+    ]
+    for regime_label, force_sub_lm, force_root_lm in regimes:
+        print(f"=== Full factorial: {regime_label} ===")
+        trials = build_trial_set(
+            num_trials,
+            rng,
+            fixed_trials,
+            note_variants,
+            policy,
+            force_sub_lm,
+            force_root_lm,
+            strict_template,
+            root_strict_template,
+            hide_note_from_root if force_sub_lm else False,
+            query_variants,
+            sub_lm_query_variants,
+            sub_lm_query_variants_hidden,
+            root_lm_query_variants,
+        )
+
+        combos = [
+            (weak_root_model, weak_sub_model),
+            (weak_root_model, strong_sub_model),
+            (strong_root_model, weak_sub_model),
+            (strong_root_model, strong_sub_model),
+        ]
+        counts_by_combo = {}
+        min_sub_calls = 5 if force_sub_lm else 0
+        max_sub_calls = 0 if force_root_lm else None
+        include_cost_hint = False
+
+        for root_model, sub_model in combos:
+            label = format_model_pair_label(root_model, sub_model)
+            counts_by_combo[label] = {"correct": 0, "incorrect": 0, "invalid": 0, "error": 0}
+            for trial in trials:
+                answer = run_live_case(
+                    label,
+                    root_model,
+                    sub_model,
+                    trial["query"],
+                    trial["context"],
+                    trial["expected"],
+                    max_attempts,
+                    min_sub_calls=min_sub_calls,
+                    include_cost_hint=include_cost_hint,
+                    max_steps=max_steps,
+                    max_sub_calls=max_sub_calls,
+                    hidden_note=trial["note_text"] if (force_sub_lm and hide_note_from_root) else None,
+                )
+                counts_by_combo[label][classify_outcome(answer, trial["expected"])] += 1
+
+        for label, counts in counts_by_combo.items():
+            summarize_counts(label, counts)
+
+        if os.environ.get("ORACLE_ABLATIONS") == "1":
+            api_key = os.environ.get("OPENAI_API_KEY")
+            base_url = os.environ.get("OPENAI_BASE_URL")
+            text_verbosity = os.environ.get("OPENAI_TEXT_VERBOSITY", "low")
+            root_effort = (os.environ.get("ROOT_MODEL_EFFORT") or "").strip() or None
+            sub_effort = (os.environ.get("SUB_MODEL_EFFORT") or "").strip() or None
+            run_oracle_ablations(
+                trials,
+                [weak_root_model, strong_root_model],
+                [weak_sub_model, strong_sub_model],
+                api_key,
+                base_url,
+                text_verbosity,
+                root_effort,
+                sub_effort,
+                max_attempts,
+            )
+
 
 
 def main():
@@ -520,6 +986,18 @@ Rules:
         "out-of-network, roadside-only). Use ONLY those five answers plus the policy/CSV to compute eligibility "
         "and payout. Do not guess or parse the note yourself. Return EXACTLY: eligible=<true|false>, payout=<int>.",
     ]
+    sub_lm_query_variants_hidden = [
+        "You MUST use the REPL and call note_yesno separately for each yes/no question about the note: "
+        "(1) does it imply emergency towing? (2) is a pre-authorization present? "
+        "(3) was the vehicle immobile? (4) is it out-of-network? (5) is it roadside assistance only? "
+        "Ask each question separately and accept only yes/no. Do NOT infer these flags yourself; "
+        "treat note_yesno answers as authoritative. Then compute eligibility and payout from the policy/CSV. "
+        "If you do not call note_yesno at least 5 times, your answer will be treated as invalid. "
+        "Return EXACTLY: eligible=<true|false>, payout=<int>.",
+        "Use the REPL. For the note, call note_yesno five times (emergency towing, preauth present, immobile, "
+        "out-of-network, roadside-only). Use ONLY those five answers plus the policy/CSV to compute eligibility "
+        "and payout. Do not guess or parse the note yourself. Return EXACTLY: eligible=<true|false>, payout=<int>.",
+    ]
     root_lm_query_variants = [
         "You MUST use the REPL but you are NOT allowed to call llm_query or llm_query_yesno. "
         "Parse the note yourself (including negations), compute eligibility and payout from the policy/CSV, "
@@ -530,10 +1008,10 @@ Rules:
         "Return EXACTLY: eligible=<true|false>, payout=<int>.",
     ]
 
-    claims_csv = make_claims_csv(note_variants[0])
-    context = [policy, claims_csv]
     force_sub_lm = os.environ.get("SUBLM_LOAD_BEARING", "1") == "1"
     force_root_lm = os.environ.get("ROOTLM_LOAD_BEARING", "0") == "1"
+    full_factorial = os.environ.get("FULL_FACTORIAL") == "1"
+    oracle_ablations = os.environ.get("ORACLE_ABLATIONS") == "1"
     root_strict_env = os.environ.get("ROOT_STRICT_REPL_TEMPLATE")
     if root_strict_env is None:
         root_strict_template = force_root_lm
@@ -541,6 +1019,13 @@ Rules:
         root_strict_template = root_strict_env == "1"
     if force_sub_lm and force_root_lm:
         raise RuntimeError("Set only one of SUBLM_LOAD_BEARING or ROOTLM_LOAD_BEARING.")
+    hide_note_env = os.environ.get("HIDE_NOTE_FROM_ROOT")
+    if hide_note_env is None:
+        hide_note_from_root = force_sub_lm
+    else:
+        hide_note_from_root = hide_note_env == "1"
+    if force_root_lm:
+        hide_note_from_root = False
     fixed_trials_env = os.environ.get("FIXED_TRIALS")
     if fixed_trials_env is None:
         fixed_trials = force_sub_lm or force_root_lm
@@ -557,17 +1042,57 @@ Rules:
     include_cost_hint = not (force_sub_lm or force_root_lm)
     max_steps = int(os.environ.get("MAX_STEPS", "10"))
     if strict_template and not force_root_lm:
-        query = build_strict_repl_query()
+        query = build_strict_repl_query_hidden() if hide_note_from_root else build_strict_repl_query()
     else:
         if force_root_lm:
             query = build_strict_root_repl_query() if root_strict_template else root_lm_query_variants[0]
         else:
-            query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
+            if force_sub_lm:
+                variants = sub_lm_query_variants_hidden if hide_note_from_root else sub_lm_query_variants
+                query = variants[0]
+            else:
+                query = query_variants[0]
+
+    claims_csv = make_claims_csv(note_variants[0])
+    context_csv = redact_note_in_csv(claims_csv) if hide_note_from_root else claims_csv
+    context = [policy, context_csv]
 
     rows = parse_csv_rows(claims_csv)
     target = next(row for row in rows if row["id"] == "C100")
     expected = compute_expected(target)
     print("Expected:", expected)
+
+    if full_factorial:
+        num_trials = int(os.environ.get("NUM_TRIALS", "1"))
+        seed = os.environ.get("RANDOM_SEED")
+        rng = random.Random(int(seed)) if seed else random.Random()
+        weak_root_model = os.environ.get("WEAK_ROOT_MODEL", "gpt-4.1-nano")
+        weak_sub_model = os.environ.get("WEAK_SUB_MODEL", "gpt-4.1-nano")
+        strong_root_model = os.environ.get("STRONG_ROOT_MODEL", "gpt-5.2")
+        strong_sub_model = os.environ.get("STRONG_SUB_MODEL", "gpt-5.2")
+        default_attempts = int(os.environ.get("MAX_ATTEMPTS", "2"))
+        max_attempts = int(os.environ.get("MAX_ATTEMPTS_STRONG", str(default_attempts)))
+        run_full_factorial_suite(
+            policy,
+            note_variants,
+            query_variants,
+            sub_lm_query_variants,
+            sub_lm_query_variants_hidden,
+            root_lm_query_variants,
+            weak_root_model,
+            strong_root_model,
+            weak_sub_model,
+            strong_sub_model,
+            num_trials,
+            rng,
+            fixed_trials,
+            strict_template,
+            root_strict_template,
+            hide_note_from_root,
+            max_steps,
+            max_attempts,
+        )
+        return
 
     use_scripted = os.environ.get("USE_SCRIPTED_DEMO") == "1"
     if use_scripted:
@@ -714,6 +1239,7 @@ print(answer)
             include_cost_hint=include_cost_hint,
             max_steps=max_steps,
             max_sub_calls=max_sub_calls,
+            hidden_note=note_variants[0] if hide_note_from_root else None,
         )
         strong_answer = run_case(
             strong_label,
@@ -725,6 +1251,7 @@ print(answer)
             include_cost_hint=include_cost_hint,
             max_steps=max_steps,
             max_sub_calls=max_sub_calls,
+            hidden_note=note_variants[0] if hide_note_from_root else None,
         )
     else:
         num_trials = int(os.environ.get("NUM_TRIALS", "1"))
@@ -758,11 +1285,23 @@ print(answer)
                             else root_lm_query_variants[0]
                         )
                     else:
-                        trial_query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
+                        if force_sub_lm:
+                            variants = (
+                                sub_lm_query_variants_hidden
+                                if hide_note_from_root
+                                else sub_lm_query_variants
+                            )
+                            trial_query = variants[0]
+                        else:
+                            trial_query = query_variants[0]
             else:
                 note_text = rng.choice(note_variants)
                 if strict_template and not force_root_lm:
-                    trial_query = build_strict_repl_query()
+                    trial_query = (
+                        build_strict_repl_query_hidden()
+                        if hide_note_from_root
+                        else build_strict_repl_query()
+                    )
                 else:
                     if force_root_lm:
                         trial_query = (
@@ -771,9 +1310,18 @@ print(answer)
                             else rng.choice(root_lm_query_variants)
                         )
                     else:
-                        trial_query = rng.choice(sub_lm_query_variants if force_sub_lm else query_variants)
+                        if force_sub_lm:
+                            variants = (
+                                sub_lm_query_variants_hidden
+                                if hide_note_from_root
+                                else sub_lm_query_variants
+                            )
+                            trial_query = rng.choice(variants)
+                        else:
+                            trial_query = rng.choice(query_variants)
             claims_csv = make_claims_csv(note_text)
-            context = [policy, claims_csv]
+            context_csv = redact_note_in_csv(claims_csv) if hide_note_from_root else claims_csv
+            context = [policy, context_csv]
             rows = parse_csv_rows(claims_csv)
             target = next(row for row in rows if row["id"] == "C100")
             expected = compute_expected(target)
@@ -793,6 +1341,7 @@ print(answer)
                 include_cost_hint=include_cost_hint,
                 max_steps=max_steps,
                 max_sub_calls=max_sub_calls,
+                hidden_note=note_text if hide_note_from_root else None,
             )
             strong_answer = run_live_case(
                 strong_label,
@@ -806,27 +1355,54 @@ print(answer)
                 include_cost_hint=include_cost_hint,
                 max_steps=max_steps,
                 max_sub_calls=max_sub_calls,
+                hidden_note=note_text if hide_note_from_root else None,
             )
 
             weak_counts[classify_outcome(weak_answer, expected)] += 1
             strong_counts[classify_outcome(strong_answer, expected)] += 1
 
-        def summary(label, counts):
-            total = sum(counts.values())
-            rate = (counts["correct"] / total * 100) if total else 0
-            print(
-                f"{label} pass rate: {counts['correct']}/{total} ({rate:.0f}%) | "
-                f"incorrect={counts['incorrect']}, invalid={counts['invalid']}, error={counts['error']}"
-            )
-
-        summary(weak_label, weak_counts)
-        summary(strong_label, strong_counts)
+        summarize_counts(weak_label, weak_counts)
+        summarize_counts(strong_label, strong_counts)
 
         if (
             weak_counts["correct"] < strong_counts["correct"]
             and strong_counts["correct"] == num_trials
         ):
             print(f"Result: {weak_label} fails, {strong_label} succeeds.")
+
+        if oracle_ablations:
+            api_key = os.environ.get("OPENAI_API_KEY")
+            base_url = os.environ.get("OPENAI_BASE_URL")
+            text_verbosity = os.environ.get("OPENAI_TEXT_VERBOSITY", "low")
+            root_effort = (os.environ.get("ROOT_MODEL_EFFORT") or "").strip() or None
+            sub_effort = (os.environ.get("SUB_MODEL_EFFORT") or "").strip() or None
+            trials = build_trial_set(
+                num_trials,
+                rng,
+                fixed_trials,
+                note_variants,
+                policy,
+                force_sub_lm,
+                force_root_lm,
+                strict_template,
+                root_strict_template,
+                hide_note_from_root,
+                query_variants,
+                sub_lm_query_variants,
+                sub_lm_query_variants_hidden,
+                root_lm_query_variants,
+            )
+            run_oracle_ablations(
+                trials,
+                [weak_root_model, strong_root_model],
+                [weak_sub_model, strong_sub_model],
+                api_key,
+                base_url,
+                text_verbosity,
+                root_effort,
+                sub_effort,
+                max(default_attempts, strong_attempts),
+            )
 
         return
 
