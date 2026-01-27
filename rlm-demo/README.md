@@ -72,6 +72,7 @@ $env:MAX_ATTEMPTS_WEAK = "1"
 $env:MAX_ATTEMPTS_STRONG = "3"
 $env:MAX_STEPS = "10"
 $env:SUBLM_LOAD_BEARING = "1"
+$env:ROOTLM_LOAD_BEARING = "0"
 $env:MIN_SUB_CALLS = "5"
 $env:LLM_YESNO_MAX_RETRIES = "4"
 $env:FIXED_TRIALS = "1"
@@ -86,6 +87,7 @@ Note: `reasoning.effort` is only applied to reasoning-capable models (gpt-5 / o-
 Some weaker models may violate the REPL protocol (e.g., missing variables); the demo will report the error
 and continue so you can still see the strong-model result.
 Note: `gpt-4.1-nano` only supports `OPENAI_TEXT_VERBOSITY=medium`; the demo will force `medium` for that model.
+Note: set `ROOTLM_LOAD_BEARING=1` to force the root model to parse the note without any sub-LM calls.
 
 To run the scripted (deterministic) version instead of live models:
 

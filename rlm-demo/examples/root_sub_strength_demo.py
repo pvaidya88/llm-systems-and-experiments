@@ -417,13 +417,25 @@ Rules:
         "out-of-network, roadside-only). Use ONLY those five answers plus the policy/CSV to compute eligibility "
         "and payout. Do not guess or parse the note yourself. Return EXACTLY: eligible=<true|false>, payout=<int>.",
     ]
+    root_lm_query_variants = [
+        "You MUST use the REPL but you are NOT allowed to call llm_query or llm_query_yesno. "
+        "Parse the note yourself (including negations), compute eligibility and payout from the policy/CSV, "
+        "and return EXACTLY: eligible=<true|false>, payout=<int>. No extra text. "
+        "If you call llm_query or llm_query_yesno, your answer will be treated as invalid.",
+        "Use the REPL to read policy/CSV, but do NOT call llm_query or llm_query_yesno. "
+        "You must parse the note yourself (handle negations) and compute eligibility/payout. "
+        "Return EXACTLY: eligible=<true|false>, payout=<int>.",
+    ]
 
     claims_csv = make_claims_csv(note_variants[0])
     context = [policy, claims_csv]
     force_sub_lm = os.environ.get("SUBLM_LOAD_BEARING", "1") == "1"
+    force_root_lm = os.environ.get("ROOTLM_LOAD_BEARING", "0") == "1"
+    if force_sub_lm and force_root_lm:
+        raise RuntimeError("Set only one of SUBLM_LOAD_BEARING or ROOTLM_LOAD_BEARING.")
     fixed_trials_env = os.environ.get("FIXED_TRIALS")
     if fixed_trials_env is None:
-        fixed_trials = force_sub_lm
+        fixed_trials = force_sub_lm or force_root_lm
     else:
         fixed_trials = fixed_trials_env == "1"
     strict_template_env = os.environ.get("STRICT_REPL_TEMPLATE")
@@ -433,12 +445,15 @@ Rules:
         strict_template = strict_template_env == "1"
     min_sub_calls = int(os.environ.get("MIN_SUB_CALLS", "5" if force_sub_lm else "0"))
     min_sub_calls = max(0, min_sub_calls)
-    include_cost_hint = not force_sub_lm
+    include_cost_hint = not (force_sub_lm or force_root_lm)
     max_steps = int(os.environ.get("MAX_STEPS", "10"))
-    if strict_template:
+    if strict_template and not force_root_lm:
         query = build_strict_repl_query()
     else:
-        query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
+        if force_root_lm:
+            query = root_lm_query_variants[0]
+        else:
+            query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
 
     rows = parse_csv_rows(claims_csv)
     target = next(row for row in rows if row["id"] == "C100")
@@ -622,16 +637,22 @@ print(answer)
         for idx in range(num_trials):
             if fixed_trials:
                 note_text = note_variants[0]
-                if strict_template:
+                if strict_template and not force_root_lm:
                     trial_query = build_strict_repl_query()
                 else:
-                    trial_query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
+                    if force_root_lm:
+                        trial_query = root_lm_query_variants[0]
+                    else:
+                        trial_query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
             else:
                 note_text = rng.choice(note_variants)
-                if strict_template:
+                if strict_template and not force_root_lm:
                     trial_query = build_strict_repl_query()
                 else:
-                    trial_query = rng.choice(sub_lm_query_variants if force_sub_lm else query_variants)
+                    if force_root_lm:
+                        trial_query = rng.choice(root_lm_query_variants)
+                    else:
+                        trial_query = rng.choice(sub_lm_query_variants if force_sub_lm else query_variants)
             claims_csv = make_claims_csv(note_text)
             context = [policy, claims_csv]
             rows = parse_csv_rows(claims_csv)
