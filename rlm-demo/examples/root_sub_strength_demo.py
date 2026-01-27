@@ -64,6 +64,54 @@ def build_query(base_query, attempt, last_error, incorrect=False):
     )
 
 
+def build_strict_repl_query():
+    repl_block = """```repl
+import csv
+from datetime import date
+
+policy, claims_csv = context
+reader = csv.DictReader([line for line in claims_csv.splitlines() if line.strip()])
+rows = list(reader)
+row = [r for r in rows if r["id"] == "C100"][0]
+amount = int(row["amount"])
+service_date = date.fromisoformat(row["service_date"])
+filed_date = date.fromisoformat(row["filed_date"])
+note = row["note"]
+
+emergency = llm_query_yesno("Does the note imply emergency towing? Note: " + note) == "yes"
+preauth = llm_query_yesno("Is a pre-authorization present? Note: " + note) == "yes"
+immobile = llm_query_yesno("Was the vehicle immobile? Note: " + note) == "yes"
+out_of_network = llm_query_yesno("Is it out-of-network? Note: " + note) == "yes"
+roadside_only = llm_query_yesno("Is it roadside assistance only? Note: " + note) == "yes"
+
+timely = (filed_date - service_date).days <= 30
+
+if out_of_network or roadside_only or not timely:
+    eligible = False
+elif row["plan"] == "Gold":
+    eligible = True
+elif row["plan"] == "Silver":
+    eligible = emergency and preauth and immobile
+elif row["plan"] == "Bronze":
+    eligible = emergency and immobile and amount <= 1200
+else:
+    eligible = False
+
+payout = 0
+if eligible:
+    deductibles = {"Gold": 100, "Silver": 200, "Bronze": 300}
+    caps = {"Gold": 3000, "Silver": 1500, "Bronze": 800}
+    payout = min(max(amount - deductibles.get(row["plan"], 0), 0), caps.get(row["plan"], amount))
+
+answer = f"eligible={str(eligible).lower()}, payout={payout}"
+```"""
+    return (
+        "In your next reply, output EXACTLY the following REPL block, unchanged, "
+        "then on a new line output FINAL_VAR(answer). Do not add any other text.\n\n"
+        + repl_block
+    )
+
+
 def _has_affirmed(note_lower, pattern):
     for match in re.finditer(pattern, note_lower):
         prefix = note_lower[: match.start()]
@@ -365,11 +413,24 @@ Rules:
     claims_csv = make_claims_csv(note_variants[0])
     context = [policy, claims_csv]
     force_sub_lm = os.environ.get("SUBLM_LOAD_BEARING", "1") == "1"
+    fixed_trials_env = os.environ.get("FIXED_TRIALS")
+    if fixed_trials_env is None:
+        fixed_trials = force_sub_lm
+    else:
+        fixed_trials = fixed_trials_env == "1"
+    strict_template_env = os.environ.get("STRICT_REPL_TEMPLATE")
+    if strict_template_env is None:
+        strict_template = force_sub_lm
+    else:
+        strict_template = strict_template_env == "1"
     min_sub_calls = int(os.environ.get("MIN_SUB_CALLS", "5" if force_sub_lm else "0"))
     min_sub_calls = max(0, min_sub_calls)
     include_cost_hint = not force_sub_lm
     max_steps = int(os.environ.get("MAX_STEPS", "10"))
-    query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
+    if strict_template:
+        query = build_strict_repl_query()
+    else:
+        query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
 
     rows = parse_csv_rows(claims_csv)
     target = next(row for row in rows if row["id"] == "C100")
@@ -551,8 +612,18 @@ print(answer)
         strong_counts = {"correct": 0, "incorrect": 0, "invalid": 0, "error": 0}
 
         for idx in range(num_trials):
-            note_text = rng.choice(note_variants)
-            trial_query = rng.choice(sub_lm_query_variants if force_sub_lm else query_variants)
+            if fixed_trials:
+                note_text = note_variants[0]
+                if strict_template:
+                    trial_query = build_strict_repl_query()
+                else:
+                    trial_query = (sub_lm_query_variants if force_sub_lm else query_variants)[0]
+            else:
+                note_text = rng.choice(note_variants)
+                if strict_template:
+                    trial_query = build_strict_repl_query()
+                else:
+                    trial_query = rng.choice(sub_lm_query_variants if force_sub_lm else query_variants)
             claims_csv = make_claims_csv(note_text)
             context = [policy, claims_csv]
             rows = parse_csv_rows(claims_csv)
