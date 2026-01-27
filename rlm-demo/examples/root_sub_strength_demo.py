@@ -183,6 +183,10 @@ C103,Silver,900,2024-08-02,2024-08-10,Roadside assistance only; no tow; OON
 """
 
 
+def format_model_pair_label(root_model, sub_model):
+    return f"root={root_model} / sub={sub_model}"
+
+
 def run_case(label, root_replies, sub_reply, query, context):
     log_repl = os.environ.get("LOG_REPL_OUTPUTS") == "1"
     rlm = RLM(
@@ -249,13 +253,13 @@ def run_live_case(label, root_model, sub_model, query, context, expected, max_at
         try:
             answer = rlm.answer(attempt_query, context)
         except Exception as exc:
-            print(f"{label} ({root_model} / {sub_model}) error: {exc}")
+            print(f"{label} error: {exc}")
             return f"<error: {exc}>"
         last_answer = answer
         normalized = normalize_answer(answer)
         if normalized:
             if normalized == expected:
-                print(f"{label} ({root_model} / {sub_model}) answer: {normalized}")
+                print(f"{label} answer: {normalized}")
                 return normalized
             last_error = f"incorrect answer: {normalized}"
             last_incorrect = True
@@ -263,7 +267,7 @@ def run_live_case(label, root_model, sub_model, query, context, expected, max_at
         last_error = f"invalid format: {answer}"
         last_incorrect = False
 
-    print(f"{label} ({root_model} / {sub_model}) invalid output: {last_answer}")
+    print(f"{label} invalid output: {last_answer}")
     return f"<invalid: {last_answer}>"
 
 
@@ -449,12 +453,10 @@ print(answer)
         weak_sub = "Yes, it indicates emergency towing."
         strong_sub = "yes"
 
-        weak_answer = run_case(
-            "Weak root + weak sub", weak_root, weak_sub, query, context
-        )
-        strong_answer = run_case(
-            "Strong root + strong sub", strong_root, strong_sub, query, context
-        )
+        weak_label = "Scripted weak root/sub"
+        strong_label = "Scripted strong root/sub"
+        weak_answer = run_case(weak_label, weak_root, weak_sub, query, context)
+        strong_answer = run_case(strong_label, strong_root, strong_sub, query, context)
     else:
         num_trials = int(os.environ.get("NUM_TRIALS", "1"))
         seed = os.environ.get("RANDOM_SEED")
@@ -469,6 +471,8 @@ print(answer)
         strong_attempts = int(os.environ.get("MAX_ATTEMPTS_STRONG", str(default_attempts)))
         verbose_trials = os.environ.get("VERBOSE_TRIALS") == "1"
 
+        weak_label = format_model_pair_label(weak_root_model, weak_sub_model)
+        strong_label = format_model_pair_label(strong_root_model, strong_sub_model)
         weak_counts = {"correct": 0, "incorrect": 0, "invalid": 0, "error": 0}
         strong_counts = {"correct": 0, "incorrect": 0, "invalid": 0, "error": 0}
 
@@ -485,7 +489,7 @@ print(answer)
                 print(f"Trial {idx + 1} expected: {expected}")
 
             weak_answer = run_live_case(
-                "Weak root + weak sub",
+                weak_label,
                 weak_root_model,
                 weak_sub_model,
                 trial_query,
@@ -494,7 +498,7 @@ print(answer)
                 weak_attempts,
             )
             strong_answer = run_live_case(
-                "Strong root + strong sub",
+                strong_label,
                 strong_root_model,
                 strong_sub_model,
                 trial_query,
@@ -514,19 +518,19 @@ print(answer)
                 f"incorrect={counts['incorrect']}, invalid={counts['invalid']}, error={counts['error']}"
             )
 
-        summary("Weak root + weak sub", weak_counts)
-        summary("Strong root + strong sub", strong_counts)
+        summary(weak_label, weak_counts)
+        summary(strong_label, strong_counts)
 
         if (
             weak_counts["correct"] < strong_counts["correct"]
             and strong_counts["correct"] == num_trials
         ):
-            print("Result: weak models fail, strong models succeed.")
+            print(f"Result: {weak_label} fails, {strong_label} succeeds.")
 
         return
 
     if weak_answer != expected and strong_answer == expected:
-        print("Result: weak models fail, strong models succeed.")
+        print(f"Result: {weak_label} fails, {strong_label} succeeds.")
 
 
 if __name__ == "__main__":
