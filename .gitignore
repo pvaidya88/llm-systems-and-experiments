@@ -3,3 +3,6 @@ __pycache__/
 .venv/
 .env
 .DS_Store
+docqa_vectorless_gpt52/data/
+docqa_vectorless_gpt52/src/docqa_vectorless_gpt52.egg-info/
+learning-to-discover-at-test-time_ttt-discover_ramsey-r55/outputs/
