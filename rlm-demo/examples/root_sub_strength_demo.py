@@ -251,7 +251,8 @@ def run_live_case(label, root_model, sub_model, query, context, expected, max_at
     )
 
     last_error = None
-    last_answer = None
+    last_invalid = None
+    last_normalized = None
     last_incorrect = False
     for attempt in range(max_attempts):
         attempt_query = build_query(query, attempt, last_error, incorrect=last_incorrect)
@@ -260,22 +261,27 @@ def run_live_case(label, root_model, sub_model, query, context, expected, max_at
         except Exception as exc:
             print(f"{label} error: {exc}")
             return f"<error: {exc}>"
-        last_answer = answer
         normalized = normalize_answer(answer)
         if normalized:
             if normalized == expected:
                 print(f"{label} answer: {normalized}")
                 return normalized
+            last_normalized = normalized
             last_error = f"incorrect answer: {normalized}"
             last_incorrect = True
             continue
+        last_invalid = answer
         last_error = f"invalid format: {answer}"
         last_incorrect = False
 
-    print(f"{label} invalid output: {last_answer}")
+    if last_normalized is not None:
+        print(f"{label} incorrect output: {last_normalized}")
+        return last_normalized
+
+    print(f"{label} invalid output: {last_invalid}")
     if os.environ.get("LOG_INVALID_REPR") == "1":
-        print(f"{label} invalid repr: {last_answer!r}")
-    return f"<invalid: {last_answer}>"
+        print(f"{label} invalid repr: {last_invalid!r}")
+    return f"<invalid: {last_invalid}>"
 
 
 def main():
