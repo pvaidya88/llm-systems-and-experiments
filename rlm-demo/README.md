@@ -1,10 +1,12 @@
 # RLM Demo (arXiv:2512.24601)
 
-This folder contains a minimal, dependency-light implementation of Recursive Language Models (RLMs) inspired by the paper. The RLM treats the long context as an external resource accessed through a Python REPL rather than stuffing it into the LLM prompt.
+Minimal, dependency-light implementation of Recursive Language Models (RLMs) inspired by the paper.
+The RLM treats long context as an external resource accessed through a Python REPL instead of stuffing
+it into the prompt.
 
 ## Quick start (dummy model)
 
-This uses a scripted LLM response to exercise the REPL loop:
+This uses scripted LLM responses to exercise the REPL loop:
 
 ```bash
 python -m examples.dummy_run
@@ -36,7 +38,9 @@ python -m examples.openai_responses_run
 
 Note: Keep your API key out of source control; prefer environment variables.
 
-## RLM vs RAG toy demo
+## Demos
+
+### RLM vs RAG toy demo
 
 This example shows a case where naive retrieval misses relevant rows and produces the wrong aggregate,
 while the RLM uses the REPL to compute the correct answer from the full context.
@@ -45,66 +49,67 @@ while the RLM uses the REPL to compute the correct answer from the full context.
 python -m examples.rlm_vs_rag_demo
 ```
 
-## Root vs sub-LM strength demo
+### Root vs sub-LM strength demo
 
-This example runs two experiments: a weak root+sub pair and a strong pair using actual OpenAI models.
-It uses a harder note with negations and synonyms, enforces REPL usage, and a strict output format,
-and will retry invalid or incorrect outputs. You can give the strong model more attempts.
-Defaults: weak = gpt-4.1-nano, strong = gpt-5.2. Override with env vars below.
+Runs controlled experiments with a root model and a sub model. The demo can enforce REPL usage,
+hide the note from the root, and simulate sub-load-bearing vs root-load-bearing regimes.
 
 ```powershell
 python -m examples.root_sub_strength_demo
 ```
 
-Environment overrides:
+## Root vs sub-LM demo configuration
 
-```powershell
-$env:OPENAI_API_KEY = "your-api-key"
-$env:WEAK_ROOT_MODEL = "gpt-4.1-nano"
-$env:WEAK_SUB_MODEL = "gpt-4.1-nano"
-$env:STRONG_ROOT_MODEL = "gpt-5.2"
-$env:STRONG_SUB_MODEL = "gpt-5.2"
-$env:ROOT_MODEL_EFFORT = "xhigh"
-$env:SUB_MODEL_EFFORT = "medium"
-$env:OPENAI_TEXT_VERBOSITY = "low"
-$env:MAX_ATTEMPTS = "2"
-$env:MAX_ATTEMPTS_WEAK = "1"
-$env:MAX_ATTEMPTS_STRONG = "3"
-$env:MAX_STEPS = "10"
-$env:SUBLM_LOAD_BEARING = "1"
-$env:ROOTLM_LOAD_BEARING = "0"
-$env:ROOT_STRICT_REPL_TEMPLATE = "1"
-$env:HIDE_NOTE_FROM_ROOT = "1"
-$env:MIN_SUB_CALLS = "5"
-$env:MAX_SUB_CALLS = "32"
-$env:SUB_MITIGATE = "0"
-$env:SUB_VOTE_K = "3"
-$env:LLM_YESNO_MAX_RETRIES = "4"
-$env:FIXED_TRIALS = "1"
-$env:STRICT_REPL_TEMPLATE = "1"
-$env:HARD_NOTES = "0"
-$env:FULL_FACTORIAL = "0"
-$env:ORACLE_ABLATIONS = "0"
-$env:LOG_REPL_OUTPUTS = "1"
-$env:NUM_TRIALS = "10"
-$env:RANDOM_SEED = "42"
-$env:VERBOSE_TRIALS = "1"
-```
+Model selection:
+- `WEAK_ROOT_MODEL` (default: `gpt-4.1-nano`)
+- `WEAK_SUB_MODEL` (default: `gpt-4.1-nano`)
+- `STRONG_ROOT_MODEL` (default: `gpt-5.2`)
+- `STRONG_SUB_MODEL` (default: `gpt-5.2`)
 
-Note: `reasoning.effort` is only applied to reasoning-capable models (gpt-5 / o-series).
-Some weaker models may violate the REPL protocol (e.g., missing variables); the demo will report the error
-and continue so you can still see the strong-model result.
-Note: `gpt-4.1-nano` only supports `OPENAI_TEXT_VERBOSITY=medium`; the demo will force `medium` for that model.
-Note: set `ROOTLM_LOAD_BEARING=1` to force the root model to parse the note without any sub-LM calls.
-Note: set `ROOT_STRICT_REPL_TEMPLATE=1` to force a fixed REPL block in root-load-bearing mode.
-Note: set `HIDE_NOTE_FROM_ROOT=1` to redact the note from the root and force `note_yesno` in sub-load-bearing mode.
-Note: set `SUB_MITIGATE=1` (and optionally `SUB_VOTE_K`) to majority-vote sub-classification calls.
-Note: set `HARD_NOTES=1` to use harder note variants (useful to break ceiling in root-load-bearing).
-Note: set `MAX_SUB_CALLS` if you increase `SUB_VOTE_K` or `LLM_YESNO_MAX_RETRIES`.
-Note: set `FULL_FACTORIAL=1` to run the 2×2 strong/weak root×sub grid for both regimes.
-Note: set `ORACLE_ABLATIONS=1` to report oracle-root (sub classification only) and oracle-sub (root only) results.
-Tip: to stress root-load-bearing, set `HARD_NOTES=1` and `ROOT_STRICT_REPL_TEMPLATE=0`.
-Tip: to test sub-load-bearing mitigation, set `SUB_MITIGATE=1` and `STRICT_REPL_TEMPLATE=0`.
+Reasoning and verbosity:
+- `ROOT_MODEL_EFFORT` (default: empty)
+- `SUB_MODEL_EFFORT` (default: empty)
+- `OPENAI_TEXT_VERBOSITY` (default: `low`)
+
+Attempts and steps:
+- `MAX_ATTEMPTS` (default: `2`)
+- `MAX_ATTEMPTS_WEAK` (default: `MAX_ATTEMPTS`)
+- `MAX_ATTEMPTS_STRONG` (default: `MAX_ATTEMPTS`)
+- `MAX_STEPS` (default: `10`)
+
+Load-bearing controls:
+- `SUBLM_LOAD_BEARING` (default: `1`)
+- `ROOTLM_LOAD_BEARING` (default: `0`)
+- `ROOT_STRICT_REPL_TEMPLATE` (default: `1`)
+- `STRICT_REPL_TEMPLATE` (default: `1`)
+- `HIDE_NOTE_FROM_ROOT` (default: `1`)
+- `HARD_NOTES` (default: `0`)
+
+Sub-call mitigation:
+- `SUB_MITIGATE` (default: `0`)
+- `SUB_VOTE_K` (default: `3` when `SUB_MITIGATE=1`, otherwise `1`)
+- `LLM_YESNO_MAX_RETRIES` (default: `4`)
+- `MAX_SUB_CALLS` (default: `32`)
+
+Experiment controls:
+- `NUM_TRIALS` (default: `10`)
+- `RANDOM_SEED` (default: `42`)
+- `FIXED_TRIALS` (default: `1`)
+- `FULL_FACTORIAL` (default: `0`) - runs 2x2 root/sub grid for both regimes
+- `ORACLE_ABLATIONS` (default: `0`)
+- `VERBOSE_TRIALS` (default: `0`)
+- `LOG_REPL_OUTPUTS` (default: `0`)
+
+Scripted demo:
+- `USE_SCRIPTED_DEMO` (default: `0`)
+
+## Notes and tips
+
+- `gpt-4.1-nano` only supports `OPENAI_TEXT_VERBOSITY=medium`; the demo forces `medium` for that model.
+- Set `ROOTLM_LOAD_BEARING=1` to forbid sub calls and make the root parse the note itself.
+- Set `HIDE_NOTE_FROM_ROOT=1` to redact the note from context and force `note_yesno` in sub-load-bearing mode.
+- Set `HARD_NOTES=1` to break ceilings in root-load-bearing runs.
+- Set `SUB_MITIGATE=1` to majority-vote sub classification calls (increase `MAX_SUB_CALLS` if needed).
 
 To run the scripted (deterministic) version instead of live models:
 
@@ -113,7 +118,6 @@ $env:USE_SCRIPTED_DEMO = "1"
 python -m examples.root_sub_strength_demo
 ```
 
-## Notes
+## Safety
 
-- The system prompt in `rlm_demo/prompts.py` is a compact version of the Appendix D prompt described in the paper.
-- The REPL executes arbitrary Python. Use trusted models and run in a sandbox if needed.
+The REPL executes arbitrary Python. Use trusted models and run in a sandbox if needed.
