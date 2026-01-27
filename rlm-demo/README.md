@@ -1,4 +1,4 @@
-# RLM Demo (arXiv:2512.24601)
+# RLM Demo
 
 Minimal, dependency-light implementation of Recursive Language Models (RLMs) inspired by the paper.
 The RLM treats long context as an external resource accessed through a Python REPL instead of stuffing
@@ -49,6 +49,49 @@ Note: Keep your API key out of source control; prefer environment variables.
 ## Expected outputs
 - Pass rate summaries per root and sub model configuration
 - Counts of invalid outputs and max step errors to diagnose brittleness
+
+## Sample results
+
+Run settings:
+```powershell
+$env:WEAK_ROOT_MODEL = "gpt-4.1-nano"
+$env:STRONG_ROOT_MODEL = "gpt-5.2"
+$env:WEAK_SUB_MODEL = "gpt-4.1-nano"
+$env:STRONG_SUB_MODEL = "gpt-5.2"
+$env:NUM_TRIALS = "10"
+$env:RANDOM_SEED = "42"
+$env:FIXED_TRIALS = "1"
+$env:STRICT_REPL_TEMPLATE = "1"
+$env:ROOT_STRICT_REPL_TEMPLATE = "1"
+$env:HIDE_NOTE_FROM_ROOT = "1"
+$env:FULL_FACTORIAL = "1"
+$env:ORACLE_ABLATIONS = "1"
+python -m examples.root_sub_strength_demo
+```
+
+Sub load bearing full factorial:
+- root gpt-4.1-nano / sub gpt-4.1-nano pass rate 5/10 (50 percent)
+- root gpt-4.1-nano / sub gpt-5.2 pass rate 9/10 (90 percent)
+- root gpt-5.2 / sub gpt-4.1-nano pass rate 5/10 (50 percent)
+- root gpt-5.2 / sub gpt-5.2 pass rate 9/10 (90 percent)
+
+Oracle ablations in sub load bearing:
+- oracle_sub root gpt-4.1-nano pass rate 10/10 (100 percent)
+- oracle_sub root gpt-5.2 pass rate 10/10 (100 percent)
+- oracle_root sub gpt-4.1-nano pass rate 0/10 (0 percent)
+- oracle_root sub gpt-5.2 pass rate 10/10 (100 percent)
+
+Root load bearing full factorial:
+- root gpt-4.1-nano / sub gpt-4.1-nano pass rate 10/10 (100 percent)
+- root gpt-4.1-nano / sub gpt-5.2 pass rate 10/10 (100 percent)
+- root gpt-5.2 / sub gpt-4.1-nano pass rate 10/10 (100 percent)
+- root gpt-5.2 / sub gpt-5.2 pass rate 10/10 (100 percent)
+
+Oracle ablations in root load bearing:
+- oracle_sub root gpt-4.1-nano pass rate 10/10 (100 percent)
+- oracle_sub root gpt-5.2 pass rate 10/10 (100 percent)
+- oracle_root sub gpt-4.1-nano pass rate 2/10 (20 percent)
+- oracle_root sub gpt-5.2 pass rate 10/10 (100 percent)
 
 ## Demos
 
