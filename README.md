@@ -1,8 +1,8 @@
-# Paper Implementations
+ï»¿# Paper Implementations
 
 A workspace for implementing and comparing ideas from research papers.
 
 ## Suggested structure
-- `papers/<paper-id-or-name>/` — code, notes, and experiments per paper
-- `shared/` — reusable utilities
-- `notes/` — cross-paper notes
+- `papers/<paper-id-or-name>/` â€” code, notes, and experiments per paper
+- `shared/` â€” reusable utilities
+- `notes/` â€” cross-paper notes
