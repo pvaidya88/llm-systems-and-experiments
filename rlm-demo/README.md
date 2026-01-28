@@ -133,6 +133,12 @@ $env:SWEEP_OUTPUT = "sweep.csv" # optional
 python -m examples.rlm_selector_sweep
 ```
 
+### Sweep conclusions (Jan 28, 2026)
+
+Summary, defaults, and caveats for the most recent partial sweep:
+- `docs/sweep_conclusions.md`
+- Pareto plots and aggregates in `plots/` (generated via `python -m examples.plot_sweep`)
+
 ## Root vs sub-LM demo configuration
 
 Model selection:

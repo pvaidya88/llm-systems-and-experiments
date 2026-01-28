@@ -120,11 +120,118 @@ def label(row):
     return f"{row['selector']}/{row['policy']}/d{row['depth']}/{row['delegation']}"
 
 
+def _svg_escape(text):
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&apos;")
+    )
+
+
+def _scale(value, vmin, vmax, out_min, out_max):
+    if vmax == vmin:
+        return (out_min + out_max) / 2
+    return out_min + (value - vmin) * (out_max - out_min) / (vmax - vmin)
+
+
+def plot_scatter_svg(rows, pareto_set, out_dir):
+    metrics = [
+        ("p50_latency_s", "P50 Latency (s)", "accuracy_vs_latency.svg"),
+        ("p50_model_input_chars", "P50 Model Input Chars", "accuracy_vs_model_input.svg"),
+        ("p50_surfaced_chars", "P50 Surfaced Chars", "accuracy_vs_surfaced.svg"),
+    ]
+    width = 960
+    height = 640
+    pad = 70
+    plot_w = width - pad * 2
+    plot_h = height - pad * 2
+
+    for metric, xlabel, filename in metrics:
+        xs = [row[metric] for row in rows]
+        ys = [row["accuracy"] for row in rows]
+        x_min = min(xs) if xs else 0.0
+        x_max = max(xs) if xs else 1.0
+        y_min = min(ys) if ys else 0.0
+        y_max = max(ys) if ys else 1.0
+        if x_min == x_max:
+            x_min -= 1
+            x_max += 1
+        if y_min == y_max:
+            y_min = max(0.0, y_min - 0.1)
+            y_max = min(1.0, y_max + 0.1)
+
+        parts = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">',
+            "<rect width='100%' height='100%' fill='white'/>",
+        ]
+        # Axes
+        parts.append(
+            f"<line x1='{pad}' y1='{height - pad}' x2='{width - pad}' y2='{height - pad}' stroke='#333'/>"
+        )
+        parts.append(
+            f"<line x1='{pad}' y1='{pad}' x2='{pad}' y2='{height - pad}' stroke='#333'/>"
+        )
+        # Ticks
+        for i in range(6):
+            frac = i / 5
+            x = pad + plot_w * frac
+            y = height - pad
+            tick_val = x_min + (x_max - x_min) * frac
+            parts.append(f"<line x1='{x}' y1='{y}' x2='{x}' y2='{y+6}' stroke='#333'/>")
+            parts.append(
+                f"<text x='{x}' y='{y+24}' font-size='11' text-anchor='middle' fill='#444'>{tick_val:.2f}</text>"
+            )
+        for i in range(6):
+            frac = i / 5
+            y = height - pad - plot_h * frac
+            x = pad
+            tick_val = y_min + (y_max - y_min) * frac
+            parts.append(f"<line x1='{x-6}' y1='{y}' x2='{x}' y2='{y}' stroke='#333'/>")
+            parts.append(
+                f"<text x='{x-10}' y='{y+4}' font-size='11' text-anchor='end' fill='#444'>{tick_val:.2f}</text>"
+            )
+
+        # Labels
+        parts.append(
+            f"<text x='{width/2}' y='{height-20}' font-size='13' text-anchor='middle' fill='#111'>{_svg_escape(xlabel)}</text>"
+        )
+        parts.append(
+            f"<text x='20' y='{height/2}' font-size='13' text-anchor='middle' fill='#111' transform='rotate(-90 20,{height/2})'>Accuracy</text>"
+        )
+        parts.append(
+            f"<text x='{width/2}' y='28' font-size='14' text-anchor='middle' fill='#111'>Accuracy vs {_svg_escape(xlabel)}</text>"
+        )
+
+        # Points
+        for row in rows:
+            x_val = row[metric]
+            y_val = row["accuracy"]
+            x = _scale(x_val, x_min, x_max, pad, width - pad)
+            y = _scale(y_val, y_min, y_max, height - pad, pad)
+            key = label(row)
+            color = "#E53935" if key in pareto_set else "#4C78A8"
+            radius = 4 if key in pareto_set else 3
+            parts.append(f"<circle cx='{x:.2f}' cy='{y:.2f}' r='{radius}' fill='{color}' opacity='0.8'/>")
+            if key in pareto_set:
+                parts.append(
+                    f"<text x='{x+6:.2f}' y='{y-6:.2f}' font-size='10' fill='#222'>{_svg_escape(key)}</text>"
+                )
+
+        parts.append("</svg>")
+        out_path = os.path.join(out_dir, filename)
+        with open(out_path, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(parts))
+
+
 def plot_scatter(rows, pareto_set, out_dir):
     try:
         import matplotlib.pyplot as plt
     except Exception:
-        print("matplotlib not available; skipping plots.")
+        print("matplotlib not available; using SVG fallback.")
+        plot_scatter_svg(rows, pareto_set, out_dir)
         return
 
     metrics = [

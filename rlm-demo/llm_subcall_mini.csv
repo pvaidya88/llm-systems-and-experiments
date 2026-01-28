@@ -1,0 +1,5 @@
+task_id,policy,mode,depth,delegation,correct,latency_s,subcalls,subcall_input_chars,subcall_output_chars,surfaced_chars,model_input_chars
+t4,single,depth2_rlm,2,rlm,1,18.03,0,0,0,2106,8917
+t5,single,depth2_rlm,2,rlm,1,10.55,0,0,0,2112,8970
+t4,single,depth1_llm,1,llm,1,7.04,1,359,39,119,2903
+t5,single,depth1_llm,1,llm,1,12.91,1,386,146,226,6092

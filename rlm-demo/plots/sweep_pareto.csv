@@ -1,0 +1,15 @@
+selector,policy,depth,delegation,n,accuracy,p50_latency_s,p50_model_input_chars,p50_surfaced_chars
+stuff,single,1,none,8,0.5,2.3449999999999998,2438.5,288.0
+stuff,single,1,llm,8,0.25,4.15,2849.5,134.5
+stuff,single,2,llm,8,1.0,5.375,3264.5,174.5
+stuff,expand,1,llm,8,0.375,4.550000000000001,2849.5,140.5
+stuff,expand,2,llm,8,1.0,6.285,3264.5,170.5
+stuff,iterative,1,llm,8,0.25,4.5600000000000005,2849.5,128.5
+grep,single,2,llm,8,0.625,4.890000000000001,3325.5,131.5
+grep,expand,1,llm,8,0.625,6.465,2901.0,148.5
+grep,iterative,1,llm,8,0.625,4.8149999999999995,2911.0,140.0
+bm25,single,1,llm,8,0.5,4.465,2889.5,147.0
+bm25,single,2,llm,8,1.0,5.5600000000000005,3304.5,147.0
+bm25,expand,1,none,8,0.625,2.425,2471.5,282.0
+bm25,expand,1,llm,8,0.375,4.37,2882.5,145.5
+bm25,expand,2,llm,8,1.0,4.73,3297.5,164.0
