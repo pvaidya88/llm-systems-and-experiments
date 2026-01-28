@@ -21,11 +21,14 @@ class ReplEnvironment:
         enable_ctx: bool = True,
         max_snippet_chars: int = 200,
         cache_enabled: bool = True,
+        tool_registry: Optional[Any] = None,
+        remote_tools_enabled: bool = False,
     ):
         self._llm_query = llm_query
         self._note_yesno = note_yesno
         self._rlm_query = rlm_query
         self._trace_hook = trace_hook
+        self._tool_registry = tool_registry
         self._timeout_s = float(repl_timeout_s)
         self._yesno_max_retries = max(
             1, int(os.environ.get("LLM_YESNO_MAX_RETRIES", "4"))
@@ -42,6 +45,7 @@ class ReplEnvironment:
             "memory_mb": repl_memory_mb,
             "cpu_seconds": repl_cpu_seconds,
             "cache_enabled": bool(cache_enabled),
+            "enable_tools": bool(remote_tools_enabled and tool_registry is not None),
         }
         self._process = ctx.Process(
             target=worker_main,
@@ -164,6 +168,19 @@ class ReplEnvironment:
                 if isinstance(event, dict):
                     self._trace_hook(event)
             self._respond("ctx_event_ack", "")
+        if msg_type == "tool_call":
+            if self._tool_registry is None:
+                self._respond_error("tool_result", "tool_registry is unavailable")
+            else:
+                try:
+                    name = str(msg.get("name"))
+                    args = msg.get("args") or []
+                    kwargs = msg.get("kwargs") or {}
+                    result = self._tool_registry.call(name, args, kwargs)
+                    self._respond("tool_result", result)
+                except Exception as exc:
+                    self._respond_error("tool_result", str(exc))
+            return
 
     def _call_llm_query(self, prompt: Any, system: Optional[str]) -> str:
         return self._llm_query(prompt, system)

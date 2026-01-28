@@ -5,6 +5,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from typing import Any, Dict, Optional
 
 from .ctx import SelectionContext
+from .tools import ToolProxy
 
 
 def worker_main(conn, context: Any, config: Dict[str, Any]) -> None:
@@ -12,6 +13,7 @@ def worker_main(conn, context: Any, config: Dict[str, Any]) -> None:
     enable_note_yesno = bool(config.get("enable_note_yesno"))
     enable_rlm_query = bool(config.get("enable_rlm_query"))
     enable_ctx = bool(config.get("enable_ctx", True))
+    enable_tools = bool(config.get("enable_tools", False))
     cache_enabled = bool(config.get("cache_enabled", True))
     max_snippet_chars = int(config.get("max_snippet_chars", 200))
     memory_mb = config.get("memory_mb")
@@ -67,6 +69,9 @@ def worker_main(conn, context: Any, config: Dict[str, Any]) -> None:
     def trace_event(event: Dict[str, Any]) -> None:
         rpc_call({"type": "ctx_event", "event": event})
 
+    def tool_call(name: str, args: list, kwargs: dict) -> Any:
+        return rpc_call({"type": "tool_call", "name": name, "args": args, "kwargs": kwargs})
+
     globals_dict: Dict[str, Any] = {
         "context": context,
         "llm_query": llm_query,
@@ -83,6 +88,8 @@ def worker_main(conn, context: Any, config: Dict[str, Any]) -> None:
             max_snippet_chars=max_snippet_chars,
             cache_enabled=cache_enabled,
         )
+    if enable_tools:
+        globals_dict["tools"] = ToolProxy(tool_call)
 
     locals_dict: Dict[str, Any] = {}
 

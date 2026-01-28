@@ -1,0 +1,13 @@
+{
+  "dataset_id": "default",
+  "corpus_path": "corpus.jsonl",
+  "queries_path": "queries.jsonl",
+  "chunk_chars": 1000,
+  "overlap": 120,
+  "pipeline": "hybrid_rag",
+  "k_retrieval": 10,
+  "k_rerank": 5,
+  "embed_batch_size": 32,
+  "rerank_model": "gpt-5.2",
+  "gen_model": "gpt-5.2"
+}

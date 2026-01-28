@@ -39,6 +39,8 @@ class RLMOptions:
     hidden_note: Optional[str] = None
     trace: Optional[RLMTrace] = None
     cache_enabled: bool = True
+    tool_registry: Optional[Any] = None
+    remote_tools_enabled: bool = False
 
 
 class RLM:
@@ -285,6 +287,8 @@ class RLM:
             enable_ctx=self._options.enable_ctx,
             max_snippet_chars=self._options.max_trace_snippet_chars,
             cache_enabled=self._options.cache_enabled,
+            tool_registry=self._options.tool_registry,
+            remote_tools_enabled=self._options.remote_tools_enabled,
         )
 
         messages = [

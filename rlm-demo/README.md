@@ -133,6 +133,41 @@ $env:SWEEP_OUTPUT = "sweep.csv" # optional
 python -m examples.rlm_selector_sweep
 ```
 
+## Benchmark harness (bench/)
+
+This repo now includes a full evaluation harness for comparing:
+- Vector RAG (dense retrieval + LLM rerank + generate)
+- Hybrid RAG (BM25 + dense + rerank + generate)
+- RLM-vectorless (tool-orchestrated retrieval with **no embeddings**)
+
+### Dataset format
+See `docs/benchmark_dataset_format.md` for `corpus.jsonl` + `queries.jsonl`.
+
+### Run a benchmark
+```powershell
+python -m bench.run --config bench/configs/default.yaml
+```
+
+Outputs:
+- `artifacts/{run_id}/per_query.jsonl`
+- `artifacts/{run_id}/summary.json`
+- `artifacts/{run_id}/summary.csv`
+
+### Scaling curves
+```powershell
+python -m bench.scale_sweep --config bench/configs/default.yaml
+```
+
+### Non-inferiority gates
+```powershell
+python -m bench.gates --run artifacts/{run_id}/summary.json
+```
+
+### Build a dataset from a directory
+```powershell
+python -m bench.tools.build_dataset_from_dir --input ./docs --output corpus.jsonl
+```
+
 ### Sweep conclusions (Jan 28, 2026)
 
 Summary, defaults, and caveats for the most recent partial sweep:
