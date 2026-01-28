@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from .schema import Document, QueryExample, PerQueryMetrics
 from .loaders import load_corpus_jsonl, load_queries_jsonl
@@ -38,6 +38,45 @@ def _load_config(path: str) -> Dict[str, Any]:
 
 def _ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
+
+
+def _snapshot_stats(stats) -> Dict[str, int]:
+    return {
+        "calls": int(getattr(stats, "calls", 0)),
+        "prompt": int(getattr(stats, "total_prompt_chars", 0)),
+        "output": int(getattr(stats, "total_output_chars", 0)),
+    }
+
+
+def _delta_stats(before: Dict[str, int], after: Dict[str, int]) -> Dict[str, int]:
+    return {
+        "calls": max(0, after["calls"] - before["calls"]),
+        "prompt": max(0, after["prompt"] - before["prompt"]),
+        "output": max(0, after["output"] - before["output"]),
+    }
+
+
+def _avg(values: List[float]) -> Optional[float]:
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def _percentile(values: List[float], pct: float) -> Optional[float]:
+    if not values:
+        return None
+    values_sorted = sorted(values)
+    idx = int(pct * (len(values_sorted) - 1))
+    return values_sorted[idx]
+
+
+def _cost_proxy(metrics: PerQueryMetrics) -> float:
+    return float(
+        (metrics.model_input_chars or 0)
+        + (metrics.llm_prompt_chars or 0)
+        + (metrics.llm_output_chars or 0)
+        + (metrics.tool_result_chars or 0)
+    )
 
 
 def main() -> None:
@@ -116,6 +155,8 @@ def main() -> None:
     tool_registry.register("expand_span", _expand_span)
 
     for ex in queries:
+        gen_before = _snapshot_stats(llm.stats)
+        rerank_before = _snapshot_stats(reranker.stats)
         if pipeline_name == "vector_rag":
             if vector_index is None or embed_client is None:
                 raise RuntimeError("Vector index not initialized")
@@ -126,6 +167,10 @@ def main() -> None:
             result = hybrid_rag(ex.question, bm25_index, vector_index, reranker, llm, k_retrieval, k_rerank, embed_client)
         else:
             result = rlm_vectorless(ex.question, tool_registry)
+        gen_after = _snapshot_stats(llm.stats)
+        rerank_after = _snapshot_stats(reranker.stats)
+        gen_delta = _delta_stats(gen_before, gen_after)
+        rerank_delta = _delta_stats(rerank_before, rerank_after)
         answer = result.get("answer", "")
         hits = result.get("hits", [])
         metrics = PerQueryMetrics(qid=ex.qid)
@@ -143,6 +188,18 @@ def main() -> None:
         metrics.retrieval_ms = (result.get("latency_breakdown", {}).get("retrieval", 0.0)) * 1000
         metrics.rerank_ms = (result.get("latency_breakdown", {}).get("rerank", 0.0)) * 1000
         metrics.generate_ms = (result.get("latency_breakdown", {}).get("generate", 0.0)) * 1000
+        metrics.llm_prompt_chars = gen_delta["prompt"] + rerank_delta["prompt"]
+        metrics.llm_output_chars = gen_delta["output"] + rerank_delta["output"]
+        metrics.llm_calls = gen_delta["calls"] + rerank_delta["calls"]
+        tool_stats = result.get("tool_stats") or {}
+        metrics.tool_calls = tool_stats.get("tool_calls")
+        metrics.tool_result_chars = tool_stats.get("tool_result_chars")
+        metrics.surfaced_chunk_chars = tool_stats.get("surfaced_chunk_chars")
+        trace = result.get("trace")
+        if trace is not None:
+            metrics.model_input_chars = getattr(trace, "model_input_chars", None)
+        metrics.tool_trace = result.get("tool_trace")
+        metrics.cost_proxy = _cost_proxy(metrics)
 
         per_query_records.append(metrics)
 
@@ -164,6 +221,18 @@ def main() -> None:
             latencies_sorted = sorted(latencies)
             summary["p50_latency"] = latencies_sorted[len(latencies_sorted) // 2]
             summary["p95_latency"] = latencies_sorted[int(0.95 * (len(latencies_sorted) - 1))]
+
+        cost_values = [m.cost_proxy for m in per_query_records if m.cost_proxy is not None]
+        summary["cost_per_query"] = _avg(cost_values)
+        summary["p50_cost_proxy"] = _percentile(cost_values, 0.5)
+        summary["p95_cost_proxy"] = _percentile(cost_values, 0.95)
+
+        summary["avg_tool_calls"] = _avg([float(m.tool_calls or 0) for m in per_query_records])
+        summary["avg_tool_result_chars"] = _avg([float(m.tool_result_chars or 0) for m in per_query_records])
+        summary["avg_surfaced_chunk_chars"] = _avg([float(m.surfaced_chunk_chars or 0) for m in per_query_records])
+        summary["avg_llm_prompt_chars"] = _avg([float(m.llm_prompt_chars or 0) for m in per_query_records])
+        summary["avg_llm_output_chars"] = _avg([float(m.llm_output_chars or 0) for m in per_query_records])
+        summary["avg_model_input_chars"] = _avg([float(m.model_input_chars or 0) for m in per_query_records])
 
         bucket_map = {}
         for ex, metrics in zip(queries, per_query_records):

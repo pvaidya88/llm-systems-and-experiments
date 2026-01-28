@@ -88,7 +88,13 @@ class PerQueryMetrics:
     generate_ms: Optional[float] = None
     cost_proxy: Optional[float] = None
     tool_calls: Optional[int] = None
+    tool_result_chars: Optional[int] = None
+    surfaced_chunk_chars: Optional[int] = None
     model_input_chars: Optional[int] = None
+    llm_prompt_chars: Optional[int] = None
+    llm_output_chars: Optional[int] = None
+    llm_calls: Optional[int] = None
+    tool_trace: Optional[List[Dict[str, Any]]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from typing import Any, Dict, List, Optional
@@ -18,6 +19,53 @@ def _format_passages(passages: List[Dict[str, Any]]) -> str:
             f"[doc_id={hit.get('doc_id')} chunk_id={hit.get('chunk_id')} start={hit.get('start')} end={hit.get('end')}] {snippet}"
         )
     return "\n".join(lines)
+
+
+def _estimate_result_chars(result: Any) -> int:
+    if result is None:
+        return 0
+    if isinstance(result, str):
+        return len(result)
+    try:
+        return len(json.dumps(result, ensure_ascii=False))
+    except Exception:
+        return len(str(result))
+
+
+def _surfaced_chars_from_result(name: str, result: Any) -> int:
+    if name not in ("bm25_search", "fetch_chunk", "expand_span"):
+        return 0
+    total = 0
+    if isinstance(result, list):
+        for item in result:
+            if isinstance(item, dict):
+                total += len(str(item.get("text", "")))
+    elif isinstance(result, dict):
+        total += len(str(result.get("text", "")))
+    return total
+
+
+def _add_hit(hit: Dict[str, Any], hits_by_key: Dict[str, Dict[str, Any]], ordered_hits: List[Dict[str, Any]]) -> None:
+    if not hit:
+        return
+    chunk_id = hit.get("chunk_id")
+    doc_id = hit.get("doc_id")
+    start = hit.get("start")
+    end = hit.get("end")
+    key = str(chunk_id) if chunk_id is not None else f"{doc_id}:{start}:{end}"
+    if key in hits_by_key:
+        return
+    hits_by_key[key] = hit
+    ordered_hits.append(hit)
+
+
+def _collect_hits(name: str, result: Any, hits_by_key: Dict[str, Dict[str, Any]], ordered_hits: List[Dict[str, Any]]) -> None:
+    if name == "bm25_search" and isinstance(result, list):
+        for item in result:
+            if isinstance(item, dict):
+                _add_hit(item, hits_by_key, ordered_hits)
+    elif name == "fetch_chunk" and isinstance(result, dict):
+        _add_hit(result, hits_by_key, ordered_hits)
 
 
 def _generate_answer(question: str, passages: List[Dict[str, Any]], llm: LLMWrapper) -> str:
@@ -90,6 +138,29 @@ def hybrid_rag(question: str, bm25_index, vector_index, reranker: LLMReranker, l
 
 
 def rlm_vectorless(question: str, tool_registry: ToolRegistry, options: Optional[RLMOptions] = None) -> Dict[str, Any]:
+    tool_trace: List[Dict[str, Any]] = []
+    hits_by_key: Dict[str, Dict[str, Any]] = {}
+    ordered_hits: List[Dict[str, Any]] = []
+    tool_stats = {"tool_calls": 0, "tool_result_chars": 0, "surfaced_chunk_chars": 0}
+
+    def _logger(name: str, args: list, kwargs: dict, result: Any, elapsed_s: float) -> None:
+        result_chars = _estimate_result_chars(result)
+        tool_stats["tool_calls"] += 1
+        tool_stats["tool_result_chars"] += result_chars
+        tool_stats["surfaced_chunk_chars"] += _surfaced_chars_from_result(name, result)
+        tool_trace.append(
+            {
+                "name": name,
+                "args": args,
+                "kwargs": kwargs,
+                "result_chars": result_chars,
+                "elapsed_ms": elapsed_s * 1000.0,
+            }
+        )
+        _collect_hits(name, result, hits_by_key, ordered_hits)
+
+    previous_logger = tool_registry.get_logger()
+    tool_registry.set_logger(_logger)
     if options is None:
         options = RLMOptions(
             require_repl=True,
@@ -114,11 +185,17 @@ def rlm_vectorless(question: str, tool_registry: ToolRegistry, options: Optional
         f"Question: {question}"
     )
     start = time.perf_counter()
-    answer = rlm.answer(prompt, context={"note": "remote tools"})
+    try:
+        answer = rlm.answer(prompt, context={"note": "remote tools"})
+    finally:
+        tool_registry.set_logger(previous_logger)
     latency = time.perf_counter() - start
     return {
         "answer": answer,
+        "hits": ordered_hits,
         "latency": latency,
         "latency_breakdown": {},
         "trace": rlm.last_trace,
+        "tool_trace": tool_trace,
+        "tool_stats": tool_stats,
     }

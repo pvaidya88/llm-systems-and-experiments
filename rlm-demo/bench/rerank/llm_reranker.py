@@ -28,6 +28,10 @@ class LLMReranker:
         )
         self._llm = LLMWrapper(client)
 
+    @property
+    def stats(self):
+        return self._llm.stats
+
     def _cache_key(self, question: str, candidates: List[Dict[str, Any]]) -> str:
         ids = ",".join(str(c.get("chunk_id")) for c in candidates)
         data = f"{question}|{ids}".encode("utf-8")

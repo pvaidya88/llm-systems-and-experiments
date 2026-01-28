@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, Callable, Dict, Optional
 
 
@@ -19,7 +20,11 @@ def _truncate_text(text: str, max_chars: int) -> str:
 
 
 class ToolRegistry:
-    def __init__(self, max_result_chars: int = 2000, logger: Optional[Callable[[str, list, dict, Any], None]] = None):
+    def __init__(
+        self,
+        max_result_chars: int = 2000,
+        logger: Optional[Callable[[str, list, dict, Any, float], None]] = None,
+    ):
         self._tools: Dict[str, Callable[..., Any]] = {}
         self._max_result_chars = max_result_chars
         self._logger = logger
@@ -27,17 +32,22 @@ class ToolRegistry:
     def register(self, name: str, func: Callable[..., Any]) -> None:
         self._tools[name] = func
 
-    def set_logger(self, logger: Optional[Callable[[str, list, dict, Any], None]]) -> None:
+    def set_logger(self, logger: Optional[Callable[[str, list, dict, Any, float], None]]) -> None:
         self._logger = logger
+
+    def get_logger(self) -> Optional[Callable[[str, list, dict, Any, float], None]]:
+        return self._logger
 
     def call(self, name: str, args: list, kwargs: dict) -> Any:
         if name not in self._tools:
             raise KeyError(f"Tool not registered: {name}")
+        start = time.perf_counter()
         result = self._tools[name](*args, **kwargs)
+        elapsed_s = time.perf_counter() - start
         sanitized = self._sanitize(result)
         if self._logger is not None:
             try:
-                self._logger(name, args, kwargs, sanitized)
+                self._logger(name, args, kwargs, sanitized, elapsed_s)
             except Exception:
                 pass
         return sanitized
