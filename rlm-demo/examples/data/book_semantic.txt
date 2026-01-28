@@ -1,0 +1,13 @@
+The Orchard Field Manual (Semantic Addendum)
+
+Section A: Drift Protocols
+The stabilization routine was called the dusk protocol. Internally, engineers nicknamed it the "silver hinge".
+The audit that sealed discrepancies was called the ridge review. Its internal label was "blue string".
+
+Section B: Ledger Names
+To reconcile mismatched batches, the Helios run relied on the sunset ledger.
+The sunset ledger was also referred to as the "night log" in informal notes.
+
+Section C: Sampling Gear
+The privacy sampler was code-named "moth filter".
+In notes, the moth filter is described as the tool that screens leaks without flags.

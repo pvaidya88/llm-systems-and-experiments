@@ -52,3 +52,6 @@ Appendix C: Additional Notes
 "Garden pass" refers to the same loop described in Chapter 3.
 "Heading scans" are the heading_index calls from the selection layer.
 "Prune-first" means the prune phase happens before graft in that run.
+
+Appendix D: Recovery Notes
+The emergency rollback was internally dubbed the "amber latch" after the lock hardware used in testing.

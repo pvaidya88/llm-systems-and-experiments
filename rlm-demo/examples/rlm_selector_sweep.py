@@ -332,6 +332,18 @@ def build_repl_code(task, selector, policy, depth, params):
 
     subcall_block = ""
     if delegate == "llm":
+        verify_block = ""
+        if params.get("llm_verify"):
+            verify_block = (
+                "verified = ''\n"
+                "if summary and summary.strip():\n"
+                "    try:\n"
+                "        verified = llm_query_yesno('Is the answer supported by the context?\\nAnswer: ' + summary.strip() + '\\nContext:\\n' + subcall_context[:400])\n"
+                "    except Exception:\n"
+                "        verified = ''\n"
+                "    if verified != 'yes':\n"
+                "        summary = ''\n"
+            )
         subcall_block = (
             "subcall_context = snippet\n"
             "if 'sub_context' in locals() and sub_context:\n"
@@ -341,6 +353,7 @@ def build_repl_code(task, selector, policy, depth, params):
             "    summary = llm_query('Extract the shortest sentence that answers the question.\\n' + question + '\\nContext:\\n' + subcall_context[:400])\n"
             "except Exception:\n"
             "    summary = ''\n"
+            + verify_block
         )
 
     regex_block = (
@@ -421,6 +434,7 @@ def build_params(delegate):
         "depth2_window": _env_int("SWEEP_DEPTH2_WINDOW", 220),
         "stuff_chars": _env_int("SWEEP_STUFF_CHARS", 8000),
         "delegate": delegate,
+        "llm_verify": _env_bool("SWEEP_LLM_VERIFY", False),
     }
 
 
@@ -459,38 +473,56 @@ def run_sweep():
         cache_enabled = cache_env.lower() in ("1", "true", "yes", "y")
 
     output_path = os.environ.get("SWEEP_OUTPUT")
+    resume = _env_bool("SWEEP_RESUME", False)
+    existing_keys = set()
     writer = None
     out_handle = None
     if output_path:
-        out_handle = open(output_path, "w", newline="", encoding="utf-8")
-        writer = csv.writer(out_handle)
-        writer.writerow(
-            [
-                "task_id",
-                "selector",
-                "policy",
-                "depth",
-                "delegation",
-                "root_model",
-                "sub_model",
-                "correct",
-                "latency_s",
-                "root_steps",
-                "subcalls",
-                "repl_blocks",
-                "retrieval_calls",
-                "surfaced_chars",
-                "repl_output_chars",
-                "subcall_input_chars",
-                "subcall_output_chars",
-                "model_input_chars",
-                "rlm_queries",
-                "rlm_cache_hits",
-                "rlm_cache_misses",
-                "retrieval_cache_hits",
-                "retrieval_cache_misses",
-            ]
-        )
+        if resume and os.path.exists(output_path):
+            with open(output_path, newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                for row in reader:
+                    existing_keys.add(
+                        (
+                            row.get("task_id"),
+                            row.get("selector"),
+                            row.get("policy"),
+                            row.get("depth"),
+                            row.get("delegation"),
+                        )
+                    )
+            out_handle = open(output_path, "a", newline="", encoding="utf-8")
+            writer = csv.writer(out_handle)
+        else:
+            out_handle = open(output_path, "w", newline="", encoding="utf-8")
+            writer = csv.writer(out_handle)
+            writer.writerow(
+                [
+                    "task_id",
+                    "selector",
+                    "policy",
+                    "depth",
+                    "delegation",
+                    "root_model",
+                    "sub_model",
+                    "correct",
+                    "latency_s",
+                    "root_steps",
+                    "subcalls",
+                    "repl_blocks",
+                    "retrieval_calls",
+                    "surfaced_chars",
+                    "repl_output_chars",
+                    "subcall_input_chars",
+                    "subcall_output_chars",
+                    "model_input_chars",
+                    "rlm_queries",
+                    "rlm_cache_hits",
+                    "rlm_cache_misses",
+                    "retrieval_cache_hits",
+                    "retrieval_cache_misses",
+                ]
+            )
 
     for selector in selectors:
         selector = selector.strip()
@@ -508,6 +540,13 @@ def run_sweep():
                         continue
                     params = build_params(delegation)
                     for task in TASKS:
+                        key = (task["id"], selector, policy, str(depth), delegation)
+                        if existing_keys and key in existing_keys:
+                            print(
+                                f"{task['id']} {selector}/{policy} depth={depth} "
+                                f"delegation={delegation} skipped (resume)"
+                            )
+                            continue
                         trace = RLMTrace()
                         options = RLMOptions(
                             require_repl=True,
