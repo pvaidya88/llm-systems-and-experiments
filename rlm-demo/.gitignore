@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 artifacts/
+# Local debug/sweep artifacts
+sweep_live.csv
+sweep_scripted.csv
+debug_depth2_trace.json
