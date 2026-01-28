@@ -19,18 +19,28 @@ def _truncate_text(text: str, max_chars: int) -> str:
 
 
 class ToolRegistry:
-    def __init__(self, max_result_chars: int = 2000):
+    def __init__(self, max_result_chars: int = 2000, logger: Optional[Callable[[str, list, dict, Any], None]] = None):
         self._tools: Dict[str, Callable[..., Any]] = {}
         self._max_result_chars = max_result_chars
+        self._logger = logger
 
     def register(self, name: str, func: Callable[..., Any]) -> None:
         self._tools[name] = func
+
+    def set_logger(self, logger: Optional[Callable[[str, list, dict, Any], None]]) -> None:
+        self._logger = logger
 
     def call(self, name: str, args: list, kwargs: dict) -> Any:
         if name not in self._tools:
             raise KeyError(f"Tool not registered: {name}")
         result = self._tools[name](*args, **kwargs)
-        return self._sanitize(result)
+        sanitized = self._sanitize(result)
+        if self._logger is not None:
+            try:
+                self._logger(name, args, kwargs, sanitized)
+            except Exception:
+                pass
+        return sanitized
 
     def _sanitize(self, result: Any) -> Any:
         if isinstance(result, str):
