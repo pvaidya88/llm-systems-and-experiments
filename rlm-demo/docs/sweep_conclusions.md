@@ -1,20 +1,22 @@
 # Sweep Conclusions (Jan 28, 2026)
 
-This page summarizes the full sweep captured in `sweep_live_v2.csv`, a nested-vs-delegation check in
-`nested_vs_delegation.csv`, and a semantic probe in `semantic_embed_probe.csv`. It is meant to be a
-one-page, decision-oriented summary.
+This page summarizes the full sweep in `sweep_live_v2.csv`, the nested-vs-delegation check in
+`nested_vs_delegation.csv`, and the semantic probe in `semantic_embed_probe.csv`. It is a concise,
+decision-oriented summary for the current codebase.
 
 ## Coverage and caveats
 - Corpus: `examples/data/book_large.txt` (synthetic book + paraphrase notes).
 - Sweep coverage: **384 rows total (full grid)** across selectors/policies/depths/delegations.
 - Tasks: 8 synthetic QA tasks; no repeats.
-- Limits: `SWEEP_TOP_K=1`, `SWEEP_MAX_HITS=1` and strict JSON protocol.
+- Limits: `SWEEP_TOP_K=1`, `SWEEP_MAX_HITS=1`, strict JSON protocol.
+- Embedding selector uses the current **hash-vector stub** (lexical), not real embeddings.
 
-## High-level takeaways (observed, partial)
-- **Depth=2 improves accuracy** on this corpus, but with higher cost.
-- **Selector choice matters at depth=1**; BM25 outperforms grep/stuff in the observed runs.
-- **Depth=2 flattens some selector differences** but not all (grep underperforms BM25 in the recursive runs).
-- **Subcall evidence exists, but tiny** (2 tasks, 1 policy).
+## Key takeaways (full sweep + follow-ups)
+- **Depth helps a lot.** Overall: depth=1 **43.2%** vs depth=2 **83.3%** accuracy.
+- **Best practical config** on this corpus is **bm25 + expand + depth=2 + delegation=llm** (8/8).
+- **Nested recursion is dominated by plain delegation** on both cost and accuracy in this sweep.
+- **Selector choice matters at depth=1**, especially for bm25 vs grep/stuff.
+- **Embeddings show only a small edge** in the semantic probe, and the current embed_search is lexical.
 
 ## Depth=1 vs Depth=2 (overall sweep)
 
@@ -23,7 +25,13 @@ one-page, decision-oriented summary.
 | 1 | **43.2%** | **4.53s** | **2,880** | **163** |
 | 2 | **83.3%** | **8.03s** | **8,850** | **1,770** |
 
-Depth=2 / Depth=1 ratios (median): **1.77× latency**, **3.07× model input**, **10.83× surfaced chars**.
+Depth=2 / Depth=1 ratios (median): **1.77x latency**, **3.07x model input**, **10.83x surfaced chars**.
+
+### Depth medians by delegation
+- Depth=1 delegation=none: **45.8%** accuracy, p50 **3.09s**
+- Depth=1 delegation=llm: **40.6%** accuracy, p50 **5.21s**
+- Depth=2 delegation=llm: **86.5%** accuracy, p50 **5.79s**
+- Depth=2 delegation=rlm: **80.2%** accuracy, p50 **9.96s**
 
 ## Recommended defaults (based on observed data)
 
@@ -39,16 +47,22 @@ Depth=2 / Depth=1 ratios (median): **1.77× latency**, **3.07× model input**, *
 - `depth=2`, `selector=bm25`, `policy=expand`, `delegation=rlm`
 - Observed: **87.5%** accuracy, **p50 8.46s**, **8,963** model_input_chars, **2,113** surfaced chars
 
-These are the best two points to ship as defaults until we finish the embedding runs.
+## Evidence highlights
+
+**RLM-style iteration helps.** Example: bm25+expand goes from **62.5% at depth=1 (none)** to
+**100% at depth=2 (llm)** on this corpus.
+
+**Nested recursion is not the winner here.** Example: bm25+expand depth=2 **rlm = 87.5%** vs
+bm25+expand depth=2 **llm = 100%**, with rlm showing much higher model_input and surfaced chars.
 
 ## Nested recursion vs plain delegation (hard tasks)
 
-File: `nested_vs_delegation.csv` (t4, t5, t9; grep + single; LL M verify on)
+File: `nested_vs_delegation.csv` (t4, t5, t9; grep + single; LLM verify on)
 
 - `depth2_rlm`: 3/3 correct, **0 subcalls**, avg latency **12.71s**, avg model_input **10,192**
 - `depth1_llm`: 3/3 correct, **2 subcalls/run**, avg latency **10.91s**, avg model_input **3,222**
 
-This is still small‑N, but it finally exercises subcalls with a strict verify step.
+Small-N, but it finally exercises subcalls with a strict verify step.
 
 ## Semantic probe (bm25 vs embed, single policy)
 
@@ -57,8 +71,8 @@ File: `semantic_embed_probe.csv` (5 semantic tasks, `book_semantic.txt`)
 - Depth=1: **bm25 100%**, **embed 100%**
 - Depth=2: **bm25 80%**, **embed 100%**
 
-These tasks are still short and **the embedding search is lexical** (hash‑vector), so this does *not*
-prove true semantic superiority. It does show that embeddings don’t hurt under the current stub.
+These tasks are short and **the embedding search is lexical** (hash-vector), so this does *not*
+prove true semantic superiority. It does show that embeddings do not hurt under the current stub.
 
 ## Plots and Pareto sets
 
@@ -73,6 +87,6 @@ Aggregates and Pareto configs:
 
 ## Boundaries / what this does NOT show yet
 - Larger corpora or real benchmarks.
-- True semantic embeddings (current embed_search is hash‑vector / lexical).
-- Multi‑hop tasks with k>1 and broader retrieval.
-- Robust subcall vs recursion tradeoffs beyond the small 3‑task head‑to‑head.
+- True semantic embeddings (current embed_search is hash-vector / lexical).
+- Multi-hop tasks with k>1 and broader retrieval.
+- Robust subcall vs recursion tradeoffs beyond the small 3-task head-to-head.
