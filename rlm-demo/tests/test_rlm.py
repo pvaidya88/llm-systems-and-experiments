@@ -1,6 +1,6 @@
 import unittest
 
-from rlm_demo import RLM, LLMClient
+from rlm_demo import RLM, LLMClient, RLMOptions
 
 
 class ScriptedLLM(LLMClient):
@@ -28,6 +28,33 @@ class RLMTests(unittest.TestCase):
             ]
         )
         rlm = RLM(llm)
+        result = rlm.answer("q", "ctx")
+        self.assertEqual(result, "ok")
+
+    def test_final_must_be_full_line(self):
+        llm = ScriptedLLM(["Here is your answer FINAL(nope) inline."])
+        rlm = RLM(llm)
+        with self.assertRaises(RuntimeError):
+            rlm.answer("q", "ctx")
+
+    def test_final_var_must_be_full_line(self):
+        llm = ScriptedLLM(
+            [
+                """```repl\nanswer = 'ok'\n```""",
+                "Inline FINAL_VAR(answer) should be ignored.",
+            ]
+        )
+        rlm = RLM(llm)
+        with self.assertRaises(RuntimeError):
+            rlm.answer("q", "ctx")
+
+    def test_json_protocol_round_trip(self):
+        reply = (
+            '{"repl":[{"code":"answer = \\"ok\\""}],"final_var":"answer"}'
+        )
+        llm = ScriptedLLM([reply])
+        options = RLMOptions(protocol="json")
+        rlm = RLM(llm, options=options)
         result = rlm.answer("q", "ctx")
         self.assertEqual(result, "ok")
 

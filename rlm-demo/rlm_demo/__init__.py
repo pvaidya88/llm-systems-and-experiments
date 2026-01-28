@@ -1,4 +1,6 @@
 from .rlm import RLM, RLMOptions
+from .trace import RLMTrace
+from .ctx import SelectionContext
 from .llm import LLMClient, CallableLLM, OpenAICompatibleClient, OpenAIResponsesClient
 
 __all__ = [
@@ -8,4 +10,6 @@ __all__ = [
     "CallableLLM",
     "OpenAICompatibleClient",
     "OpenAIResponsesClient",
+    "RLMTrace",
+    "SelectionContext",
 ]

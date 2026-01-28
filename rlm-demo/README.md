@@ -113,6 +113,26 @@ hide the note from the root, and simulate sub-load-bearing vs root-load-bearing 
 python -m examples.root_sub_strength_demo
 ```
 
+### Book QA without vector DB
+
+Uses `ctx.bm25_search` + `ctx.expand` in the REPL to answer a book question without embeddings.
+
+```powershell
+python -m examples.book_qa_vectorless_demo
+```
+
+### Selector sweep harness
+
+Sweeps selectors (grep/BM25/embeddings), recursion policy, and depth with trace + budget metrics.
+Writes CSV if `SWEEP_OUTPUT` is set.
+
+```powershell
+$env:OPENAI_API_KEY = "your-api-key" # optional for live runs
+$env:USE_SCRIPTED_SWEEP = "1" # optional for offline scripted run
+$env:SWEEP_OUTPUT = "sweep.csv" # optional
+python -m examples.rlm_selector_sweep
+```
+
 ## Root vs sub-LM demo configuration
 
 Model selection:
@@ -165,6 +185,13 @@ Scripted demo:
 - Set `HIDE_NOTE_FROM_ROOT=1` to redact the note from context and force `note_yesno` in sub-load-bearing mode.
 - Set `HARD_NOTES=1` to break ceilings in root-load-bearing runs.
 - Set `SUB_MITIGATE=1` to majority-vote sub classification calls (increase `MAX_SUB_CALLS` if needed).
+- Hidden note isolation runs a separate subprocess and only supports `OpenAICompatibleClient` and
+  `OpenAIResponsesClient` sub-models. For scripted/custom sub-LLMs, set `RLM_ALLOW_INSECURE_NOTE=1`
+  to fall back to in-process `note_yesno` (results may be compromised).
+- The REPL executes in a subprocess with timeouts and memory/CPU limits; tune via `RLMOptions`
+  (`repl_timeout_s`, `repl_memory_mb`, `repl_cpu_seconds`) if needed.
+- Set `RLMOptions.protocol="json"` to use a strict JSON output protocol for REPL/FINAL responses.
+  This removes regex parsing and makes outputs machine-parseable.
 
 To run the scripted (deterministic) version instead of live models:
 

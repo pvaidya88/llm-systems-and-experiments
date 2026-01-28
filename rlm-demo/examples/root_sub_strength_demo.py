@@ -1055,6 +1055,14 @@ Rules:
         hide_note_from_root = hide_note_env == "1"
     if force_root_lm:
         hide_note_from_root = False
+    if hide_note_from_root and os.environ.get("RLM_ALLOW_INSECURE_NOTE") != "1":
+        use_scripted = os.environ.get("USE_SCRIPTED_DEMO") == "1"
+        if use_scripted:
+            raise RuntimeError(
+                "Hidden note isolation is required for scripted demos. "
+                "Set RLM_ALLOW_INSECURE_NOTE=1 to allow insecure in-process note access, "
+                "or disable HIDE_NOTE_FROM_ROOT."
+            )
     fixed_trials_env = os.environ.get("FIXED_TRIALS")
     if fixed_trials_env is None:
         fixed_trials = force_sub_lm or force_root_lm

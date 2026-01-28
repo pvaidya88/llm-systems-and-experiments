@@ -1,0 +1,36 @@
+The Orchard Engine
+
+Table of Contents
+1. Chapter 1: Seeds and Soil
+2. Chapter 2: Selection without Vectors
+3. Chapter 3: Recursive Inquiry
+
+Chapter 1: Seeds and Soil
+The Orchard Engine was proposed in 2022 by Lina Park as a lightweight reasoning loop.
+It has three phases: seed, prune, and graft. The seed phase builds a working set of facts.
+The prune phase removes contradictions. The graft phase merges newly discovered facts.
+The early prototype used handwritten "catalog cards" instead of a vector database.
+
+Chapter 2: Selection without Vectors
+This chapter describes the "lens" method: keyword grep, BM25 over chunks, and heading scans.
+In the Greenleaf benchmark (120 questions across 6 chapters), the best vectorless setup
+reached 78% accuracy using BM25 plus expand-around-anchor. Grep alone reached 52%.
+Heading scans were most helpful for chapter titles and named entities.
+
+Chapter 3: Recursive Inquiry
+Three failure modes were observed: anchor drift, premature finalization, and silent truncation.
+The most common failure was silent truncation (43%), followed by anchor drift (31%).
+Depth-2 recursion improved accuracy on cross-chapter questions by 9 points.
+
+Chapter 4: Orchard Trials
+The Redwood trial adopted a prune-first schedule to stabilize selection.
+In the Redwood trial report, anchor drift fell to 18% once the prune-first schedule was enforced.
+
+Appendix A: Paraphrase Notes
+"Eliminates contradictions" is used interchangeably with "prune phase removes contradictions."
+"Share" refers to the reported percentage in the benchmark results.
+
+Appendix B: Retrieval Paraphrases
+"Wobble" refers to anchor drift in the trial reports.
+"Paper index" is a nickname for the catalog cards used in Chapter 1.
+"Leaf score" refers to the accuracy reported in the Greenleaf benchmark.
