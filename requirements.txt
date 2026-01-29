@@ -1,0 +1,8 @@
+# Core dependencies for rlm-demo benchmark/eval
+numpy
+openai
+pypdf
+PyPDF2
+pyyaml
+sentence-transformers
+datasets

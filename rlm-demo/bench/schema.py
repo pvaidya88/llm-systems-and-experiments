@@ -80,6 +80,7 @@ class PerQueryMetrics:
     recall_at_5: Optional[float] = None
     recall_at_10: Optional[float] = None
     recall_at_20: Optional[float] = None
+    ndcg_at_10: Optional[float] = None
     hallucination: Optional[bool] = None
     citation_precision: Optional[float] = None
     latency_ms: Optional[float] = None

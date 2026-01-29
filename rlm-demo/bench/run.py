@@ -17,12 +17,13 @@ from .metrics import (
     exact_match,
     f1_score,
     recall_at_k,
+    ndcg_at_k,
     citation_precision,
     hallucination_proxy,
     bootstrap_ci,
 )
 from .bucketing import infer_buckets
-from .pipelines import vector_rag, hybrid_rag, rlm_vectorless, bm25_only, vector_oracle
+from .pipelines import vector_rag, hybrid_rag, rlm_vectorless, bm25_only, vector_oracle, dense_extractive
 from rlm_demo.tools import ToolRegistry
 
 
@@ -133,7 +134,7 @@ def main() -> None:
             batch_size=cfg.get("embed_batch_size", 32),
             path=vector_path,
         )
-    elif pipeline_name == "vector_oracle":
+    elif pipeline_name in ("vector_oracle", "dense_extractive"):
         embed_client = _build_embed_client(cfg)
         dense_index = DenseIndex.build(
             chunks,
@@ -189,6 +190,10 @@ def main() -> None:
             if dense_index is None or embed_client is None:
                 raise RuntimeError("Vector index not initialized")
             result = vector_oracle(ex.question, dense_index, embed_client, k_retrieval, gold_answer=ex.answer)
+        elif pipeline_name == "dense_extractive":
+            if dense_index is None or embed_client is None:
+                raise RuntimeError("Vector index not initialized")
+            result = dense_extractive(ex.question, dense_index, embed_client, k_retrieval)
         elif pipeline_name == "bm25_only":
             result = bm25_only(ex.question, bm25_index, k_retrieval)
         else:
@@ -208,6 +213,7 @@ def main() -> None:
             metrics.recall_at_5 = recall_at_k(hits, ex.gold_doc_ids, 5)
             metrics.recall_at_10 = recall_at_k(hits, ex.gold_doc_ids, 10)
             metrics.recall_at_20 = recall_at_k(hits, ex.gold_doc_ids, 20)
+            metrics.ndcg_at_10 = ndcg_at_k(hits, ex.gold_doc_ids, 10)
         metrics.citation_precision = citation_precision(answer, chunk_lookup)
         metrics.hallucination = hallucination_proxy(answer, chunk_lookup)
         metrics.latency_ms = (result.get("latency", 0.0) or 0.0) * 1000
@@ -237,6 +243,7 @@ def main() -> None:
         summary["em"] = sum(m.exact_match or 0 for m in per_query_records) / len(per_query_records)
         summary["f1"] = sum(m.f1 or 0 for m in per_query_records) / len(per_query_records)
         summary["recall_at_10"] = sum(m.recall_at_10 or 0 for m in per_query_records) / len(per_query_records)
+        summary["ndcg_at_10"] = sum(m.ndcg_at_10 or 0 for m in per_query_records) / len(per_query_records)
         summary["hallucination_rate"] = sum(1 for m in per_query_records if m.hallucination) / len(per_query_records)
 
         acc_values = [1.0 if m.correct else 0.0 for m in per_query_records if m.correct is not None]

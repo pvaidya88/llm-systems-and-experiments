@@ -24,6 +24,10 @@ python -m examples.rlm_selector_sweep
 
 Notes: The sweep corpus is synthetic and the embed selector uses a hash-vector stub. See `rlm-demo/docs/sweep_conclusions.md` for full detail and caveats.
 
+## Quick setup
+- Dependencies: `requirements.txt` (core) + `requirements-dev.txt` (tests)
+- Convenience targets: `Makefile` (`make setup`, `make bench-smoke`, `make bench-squad`, `make test`)
+
 ## Real benchmark (SQuAD-mini + real embeddings)
 - Config: `bench/configs/squad_mini.json` (sentence-transformers/all-MiniLM-L6-v2)
 - Results (oracle extractive baseline): Accuracy 1.00, Recall@10 1.00, P50 latency ~43 ms
@@ -33,6 +37,12 @@ Notes: The sweep corpus is synthetic and the embed selector uses a hash-vector s
 - Run a benchmark: `python -m bench.run --config bench/configs/default.yaml`
 - Run non-inferiority gates: `python -m bench.gates --run artifacts/{run_id}/summary.json`
 - CI smoke gate: `.github/workflows/bench-gates.yml` runs `bench/configs/smoke.json` against a stored baseline.
+- Release decision doc: `rlm-demo/docs/release_decision.md`
+- System overview: `rlm-demo/docs/system_overview.md`
+
+## Public benchmark (SQuAD-120)
+- Configs: `bench/configs/squad_public.json` and `bench/configs/squad_public_oracle.json`
+- Results: `rlm-demo/docs/public_benchmark_results.md`
 
 ## Start here (recruiter friendly)
 - `rlm-demo` - Recursive Language Model demo + evaluation harness and sweep

@@ -177,6 +177,18 @@ python -m bench.run --config bench/configs/squad_mini.json
 Results: `docs/real_benchmark_results.md`
 Requires: `pip install datasets sentence-transformers`
 
+### Public benchmark (SQuAD-120)
+Larger public dataset with real embeddings:
+```powershell
+python -m bench.run --config bench/configs/squad_public_oracle.json
+python -m bench.run --config bench/configs/squad_public.json
+```
+Results: `docs/public_benchmark_results.md`
+
+### Release decision + system overview
+- `docs/release_decision.md`
+- `docs/system_overview.md`
+
 ### Build a dataset from a directory
 ```powershell
 python -m bench.tools.build_dataset_from_dir --input ./docs --output corpus.jsonl

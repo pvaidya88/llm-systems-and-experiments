@@ -5,6 +5,7 @@ This page summarizes the full sweep in `sweep_live_v2.csv`, the nested-vs-delega
 decision-oriented summary for the current codebase.
 
 See also: `docs/real_benchmark_results.md` for a small real benchmark run with sentence-transformer embeddings.
+See also: `docs/public_benchmark_results.md` for a 120-question public benchmark.
 
 ## Coverage and caveats
 - Corpus: `examples/data/book_large.txt` (synthetic book + paraphrase notes).

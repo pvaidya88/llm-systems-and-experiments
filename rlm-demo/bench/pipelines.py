@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -86,6 +87,48 @@ def bm25_only(question: str, bm25_index, k_retrieval: int = 5) -> Dict[str, Any]
     hits = bm25_index.search(question, k_retrieval)
     retrieval_time = time.perf_counter() - start
     answer = hits[0]["text"] if hits else ""
+    return {
+        "answer": answer,
+        "hits": hits,
+        "latency": retrieval_time,
+        "latency_breakdown": {
+            "retrieval": retrieval_time,
+            "rerank": 0.0,
+            "generate": 0.0,
+        },
+    }
+
+
+def _split_sentences(text: str) -> List[str]:
+    parts = [seg.strip() for seg in re.split(r"(?<=[.!?])\\s+", text or "") if seg.strip()]
+    return parts or ([text.strip()] if text.strip() else [])
+
+
+def dense_extractive(
+    question: str,
+    dense_index,
+    embed_client,
+    k_retrieval: int = 5,
+) -> Dict[str, Any]:
+    start = time.perf_counter()
+    hits = dense_index.search(question, k_retrieval, embed_client)
+    retrieval_time = time.perf_counter() - start
+
+    q_tokens = set(re.findall(r"[a-z0-9]+", (question or "").lower()))
+    best_sentence = ""
+    best_score = -1.0
+    for hit in hits:
+        for sentence in _split_sentences(str(hit.get("text", ""))):
+            s_tokens = set(re.findall(r"[a-z0-9]+", sentence.lower()))
+            if not q_tokens:
+                score = 0.0
+            else:
+                score = len(q_tokens.intersection(s_tokens)) / max(1, len(q_tokens))
+            if score > best_score:
+                best_score = score
+                best_sentence = sentence
+
+    answer = best_sentence
     return {
         "answer": answer,
         "hits": hits,

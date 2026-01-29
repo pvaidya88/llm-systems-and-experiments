@@ -1,4 +1,5 @@
 import re
+import math
 import statistics
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -41,6 +42,20 @@ def recall_at_k(hits: List[Dict[str, Any]], gold_doc_ids: List[str], k: int) -> 
     hit_ids = {str(h.get("doc_id")) for h in hits[:k]}
     gold = {str(x) for x in gold_doc_ids}
     return 1.0 if gold.intersection(hit_ids) else 0.0
+
+
+def ndcg_at_k(hits: List[Dict[str, Any]], gold_doc_ids: List[str], k: int) -> float:
+    if not gold_doc_ids:
+        return 0.0
+    gold = {str(x) for x in gold_doc_ids}
+    dcg = 0.0
+    for idx, hit in enumerate(hits[:k]):
+        rel = 1.0 if str(hit.get("doc_id")) in gold else 0.0
+        if rel > 0:
+            dcg += rel / (math.log2(idx + 2))
+    # Ideal DCG for binary relevance with at least one relevant doc
+    idcg = 1.0
+    return dcg / idcg if idcg > 0 else 0.0
 
 
 def parse_citations(text: str) -> List[Dict[str, Any]]:

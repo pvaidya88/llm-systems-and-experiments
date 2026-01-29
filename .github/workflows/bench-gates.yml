@@ -17,6 +17,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run tests
+        run: |
+          pytest rlm-demo/tests
       - name: Run smoke benchmark
         working-directory: rlm-demo
         run: |
