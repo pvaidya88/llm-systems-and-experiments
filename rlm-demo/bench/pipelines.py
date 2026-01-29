@@ -81,6 +81,54 @@ def _generate_answer(question: str, passages: List[Dict[str, Any]], llm: LLMWrap
     return llm.complete(messages)
 
 
+def bm25_only(question: str, bm25_index, k_retrieval: int = 5) -> Dict[str, Any]:
+    start = time.perf_counter()
+    hits = bm25_index.search(question, k_retrieval)
+    retrieval_time = time.perf_counter() - start
+    answer = hits[0]["text"] if hits else ""
+    return {
+        "answer": answer,
+        "hits": hits,
+        "latency": retrieval_time,
+        "latency_breakdown": {
+            "retrieval": retrieval_time,
+            "rerank": 0.0,
+            "generate": 0.0,
+        },
+    }
+
+
+def vector_oracle(
+    question: str,
+    dense_index,
+    embed_client,
+    k_retrieval: int = 5,
+    gold_answer: Optional[str] = None,
+) -> Dict[str, Any]:
+    start = time.perf_counter()
+    hits = dense_index.search(question, k_retrieval, embed_client)
+    retrieval_time = time.perf_counter() - start
+    answer = ""
+    if gold_answer:
+        gold_lower = gold_answer.strip().lower()
+        for hit in hits:
+            if gold_lower and gold_lower in str(hit.get("text", "")).lower():
+                answer = gold_answer
+                break
+    if not answer:
+        answer = hits[0]["text"] if hits else ""
+    return {
+        "answer": answer,
+        "hits": hits,
+        "latency": retrieval_time,
+        "latency_breakdown": {
+            "retrieval": retrieval_time,
+            "rerank": 0.0,
+            "generate": 0.0,
+        },
+    }
+
+
 def vector_rag(question: str, vector_index, reranker: LLMReranker, llm: LLMWrapper, k_retrieval: int, k_rerank: int, embed_client) -> Dict[str, Any]:
     start = time.perf_counter()
     hits = vector_index.search(question, k_retrieval, embed_client)

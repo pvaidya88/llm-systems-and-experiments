@@ -9,8 +9,9 @@ from .loaders import load_corpus_jsonl, load_queries_jsonl
 from .chunking import chunk_documents, persist_chunks
 from .index.bm25_index import BM25Index
 from .index.vector_index import VectorIndex
+from .index.dense_index import DenseIndex
 from .rerank.llm_reranker import LLMReranker
-from .llm_clients import OpenAIEmbeddingClient, LLMWrapper
+from .llm_clients import OpenAIEmbeddingClient, SentenceTransformerEmbeddingClient, LLMWrapper
 from rlm_demo.llm import OpenAIResponsesClient
 from .metrics import (
     exact_match,
@@ -21,7 +22,7 @@ from .metrics import (
     bootstrap_ci,
 )
 from .bucketing import infer_buckets
-from .pipelines import vector_rag, hybrid_rag, rlm_vectorless
+from .pipelines import vector_rag, hybrid_rag, rlm_vectorless, bm25_only, vector_oracle
 from rlm_demo.tools import ToolRegistry
 
 
@@ -34,6 +35,22 @@ def _load_config(path: str) -> Dict[str, Any]:
         return yaml.safe_load(text)
     except Exception:
         return json.loads(text)
+
+
+def _build_embed_client(cfg: Dict[str, Any]):
+    backend = (cfg.get("embed_backend") or os.environ.get("EMBED_BACKEND") or "openai").lower()
+    if backend in ("sentence-transformers", "sentence_transformers", "st", "sbert"):
+        model = cfg.get("embed_model") or os.environ.get("EMBED_MODEL") or "sentence-transformers/all-MiniLM-L6-v2"
+        device = cfg.get("embed_device") or os.environ.get("EMBED_DEVICE")
+        batch_size = cfg.get("embed_batch_size", 32)
+        return SentenceTransformerEmbeddingClient(model=model, device=device, batch_size=batch_size)
+
+    embed_model = cfg.get("embed_model") or os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+    return OpenAIEmbeddingClient(
+        embed_model,
+        os.environ.get("OPENAI_API_KEY"),
+        os.environ.get("OPENAI_BASE_URL"),
+    )
 
 
 def _ensure_dir(path: str) -> None:
@@ -103,21 +120,25 @@ def main() -> None:
     bm25_path = os.path.join("artifacts", dataset_id, "bm25.sqlite")
     bm25_index = BM25Index.build(chunks, bm25_path)
 
+    pipeline_name = cfg.get("pipeline", "hybrid_rag")
     embed_client = None
     vector_index = None
-    if cfg.get("pipeline", "hybrid_rag") in ("vector_rag", "hybrid_rag"):
-        embed_model = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-small")
-        embed_client = OpenAIEmbeddingClient(
-            embed_model,
-            os.environ.get("OPENAI_API_KEY"),
-            os.environ.get("OPENAI_BASE_URL"),
-        )
+    dense_index = None
+    if pipeline_name in ("vector_rag", "hybrid_rag"):
+        embed_client = _build_embed_client(cfg)
         vector_path = os.path.join("artifacts", dataset_id, "vector_index")
         vector_index = VectorIndex.build(
             chunks,
             embed_client,
             batch_size=cfg.get("embed_batch_size", 32),
             path=vector_path,
+        )
+    elif pipeline_name == "vector_oracle":
+        embed_client = _build_embed_client(cfg)
+        dense_index = DenseIndex.build(
+            chunks,
+            embed_client,
+            batch_size=cfg.get("embed_batch_size", 32),
         )
 
     reranker = LLMReranker(model=cfg.get("rerank_model"))
@@ -138,7 +159,6 @@ def main() -> None:
     per_query_records = []
     summary = {"run_id": run_id, "dataset_id": dataset_id}
 
-    pipeline_name = cfg.get("pipeline", "hybrid_rag")
     k_retrieval = cfg.get("k_retrieval", 10)
     k_rerank = cfg.get("k_rerank", 5)
 
@@ -165,6 +185,12 @@ def main() -> None:
             if vector_index is None or embed_client is None:
                 raise RuntimeError("Vector index not initialized")
             result = hybrid_rag(ex.question, bm25_index, vector_index, reranker, llm, k_retrieval, k_rerank, embed_client)
+        elif pipeline_name == "vector_oracle":
+            if dense_index is None or embed_client is None:
+                raise RuntimeError("Vector index not initialized")
+            result = vector_oracle(ex.question, dense_index, embed_client, k_retrieval, gold_answer=ex.answer)
+        elif pipeline_name == "bm25_only":
+            result = bm25_only(ex.question, bm25_index, k_retrieval)
         else:
             result = rlm_vectorless(ex.question, tool_registry)
         gen_after = _snapshot_stats(llm.stats)

@@ -4,6 +4,8 @@ This page summarizes the full sweep in `sweep_live_v2.csv`, the nested-vs-delega
 `nested_vs_delegation.csv`, and the semantic probe in `semantic_embed_probe.csv`. It is a concise,
 decision-oriented summary for the current codebase.
 
+See also: `docs/real_benchmark_results.md` for a small real benchmark run with sentence-transformer embeddings.
+
 ## Coverage and caveats
 - Corpus: `examples/data/book_large.txt` (synthetic book + paraphrase notes).
 - Sweep coverage: **384 rows total (full grid)** across selectors/policies/depths/delegations.

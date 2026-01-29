@@ -163,6 +163,20 @@ python -m bench.scale_sweep --config bench/configs/default.yaml
 python -m bench.gates --run artifacts/{run_id}/summary.json
 ```
 
+### CI smoke gate
+GitHub Actions runs a tiny offline benchmark and enforces non-inferiority gates:
+- config: `bench/configs/smoke.json`
+- thresholds: `bench/configs/smoke_thresholds.json`
+- baseline: `bench/baselines/smoke_summary.json`
+
+### Real benchmark (SQuAD-mini)
+Runs a small real dataset with sentence-transformer embeddings and an oracle extractive baseline:
+```powershell
+python -m bench.run --config bench/configs/squad_mini.json
+```
+Results: `docs/real_benchmark_results.md`
+Requires: `pip install datasets sentence-transformers`
+
 ### Build a dataset from a directory
 ```powershell
 python -m bench.tools.build_dataset_from_dir --input ./docs --output corpus.jsonl

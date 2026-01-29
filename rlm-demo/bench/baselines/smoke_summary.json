@@ -1,0 +1,32 @@
+{
+  "run_id": "smoke",
+  "dataset_id": "smoke",
+  "pipeline": "bm25_only",
+  "total_queries": 3,
+  "accuracy": 1.0,
+  "em": 1.0,
+  "f1": 1.0,
+  "recall_at_10": 1.0,
+  "hallucination_rate": 1.0,
+  "accuracy_ci": [
+    1.0,
+    1.0
+  ],
+  "p50_latency": 0.05830000736750662,
+  "p95_latency": 0.05830000736750662,
+  "cost_per_query": 0.0,
+  "p50_cost_proxy": 0.0,
+  "p95_cost_proxy": 0.0,
+  "avg_tool_calls": 0.0,
+  "avg_tool_result_chars": 0.0,
+  "avg_surfaced_chunk_chars": 0.0,
+  "avg_llm_prompt_chars": 0.0,
+  "avg_llm_output_chars": 0.0,
+  "avg_model_input_chars": 0.0,
+  "buckets": {
+    "high_overlap": {
+      "accuracy": 1.0,
+      "recall_at_10": 1.0
+    }
+  }
+}

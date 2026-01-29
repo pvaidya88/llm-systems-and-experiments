@@ -67,7 +67,9 @@ def main() -> None:
         with open(gates_path, "w", encoding="utf-8") as handle:
             json.dump(result, handle, ensure_ascii=False, indent=2)
         print(f"Wrote {gates_path}")
-        print(f"Gate pass: {result.get('pass')}")
+        print(f"Gate pass: {result.get('passed')}")
+        if not result.get("passed"):
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

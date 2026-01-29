@@ -1,0 +1,10 @@
+{
+  "dataset_id": "smoke",
+  "run_id": "smoke",
+  "corpus_path": "bench/data/smoke_corpus.jsonl",
+  "queries_path": "bench/data/smoke_queries.jsonl",
+  "chunk_chars": 200,
+  "overlap": 20,
+  "pipeline": "bm25_only",
+  "k_retrieval": 3
+}

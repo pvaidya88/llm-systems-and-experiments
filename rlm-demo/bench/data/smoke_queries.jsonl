@@ -1,0 +1,3 @@
+{"qid":"q1","question":"Alpha protocol status","answer":"Alpha protocol status: GREEN.","gold_doc_ids":["alpha"]}
+{"qid":"q2","question":"Beta protocol status","answer":"Beta protocol status: YELLOW.","gold_doc_ids":["beta"]}
+{"qid":"q3","question":"Gamma protocol status","answer":"Gamma protocol status: RED.","gold_doc_ids":["gamma"]}

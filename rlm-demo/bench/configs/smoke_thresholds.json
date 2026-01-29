@@ -1,0 +1,9 @@
+{
+  "accuracy_diff": 0.02,
+  "low_overlap_accuracy_diff": 0.05,
+  "recall_diff": 0.03,
+  "low_overlap_recall_diff": 0.05,
+  "latency_ratio": 50.0,
+  "cost_ratio": 10.0,
+  "hallucination_diff": 0.0
+}

@@ -1,0 +1,27 @@
+﻿name: bench-gates
+on:
+  push:
+    paths:
+      - "rlm-demo/**"
+      - ".github/workflows/bench-gates.yml"
+  pull_request:
+    paths:
+      - "rlm-demo/**"
+      - ".github/workflows/bench-gates.yml"
+
+jobs:
+  bench-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run smoke benchmark
+        working-directory: rlm-demo
+        run: |
+          python -m bench.run --config bench/configs/smoke.json
+      - name: Run non-inferiority gates
+        working-directory: rlm-demo
+        run: |
+          python -m bench.compare_runs --baseline bench/baselines/smoke_summary.json --candidate artifacts/smoke/summary.json --thresholds bench/configs/smoke_thresholds.json --run-gates

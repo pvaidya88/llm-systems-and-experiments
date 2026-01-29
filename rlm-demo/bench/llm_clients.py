@@ -72,6 +72,49 @@ class OpenAIEmbeddingClient(EmbeddingClient):
         return vectors[0] if vectors else []
 
 
+class SentenceTransformerEmbeddingClient(EmbeddingClient):
+    def __init__(self, model: str = "sentence-transformers/all-MiniLM-L6-v2", device: Optional[str] = None, batch_size: int = 32):
+        self.model = model
+        self.device = device
+        self.batch_size = batch_size
+        self.stats = LLMCallStats()
+        self._model = None
+        self.dim = 0
+
+    def _get_model(self):
+        if self._model is None:
+            from sentence_transformers import SentenceTransformer
+
+            if self.device:
+                self._model = SentenceTransformer(self.model, device=self.device)
+            else:
+                self._model = SentenceTransformer(self.model)
+        return self._model
+
+    def embed_texts(self, texts: List[str]):
+        if not texts:
+            return []
+        model = self._get_model()
+        start = time.perf_counter()
+        vectors = model.encode(
+            texts,
+            batch_size=self.batch_size,
+            convert_to_numpy=True,
+            normalize_embeddings=False,
+        )
+        wall_s = time.perf_counter() - start
+        vectors = vectors.tolist()
+        if vectors:
+            self.dim = len(vectors[0])
+        prompt_chars = sum(len(t) for t in texts)
+        self.stats.record(prompt_chars, 0, wall_s)
+        return vectors
+
+    def embed_query(self, text: str):
+        vectors = self.embed_texts([text])
+        return vectors[0] if vectors else []
+
+
 class FakeEmbeddingClient(EmbeddingClient):
     def __init__(self, dim: int = 8):
         self.dim = dim

@@ -1,0 +1,13 @@
+{
+  "dataset_id": "squad_mini",
+  "run_id": "squad_mini",
+  "corpus_path": "bench/data/squad_mini_corpus.jsonl",
+  "queries_path": "bench/data/squad_mini_queries.jsonl",
+  "chunk_chars": 1200,
+  "overlap": 0,
+  "pipeline": "vector_oracle",
+  "embed_backend": "sentence-transformers",
+  "embed_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "embed_batch_size": 32,
+  "k_retrieval": 3
+}
